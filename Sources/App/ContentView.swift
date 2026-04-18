@@ -4,6 +4,25 @@ struct ContentView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
+        Group {
+            if appState.isAuthenticated {
+                MainTabView()
+            } else {
+                LoginView()
+            }
+        }
+        // Animate the auth ↔ main transition
+        .animation(.easeInOut(duration: 0.3), value: appState.isAuthenticated)
+        .task {
+            await appState.restoreSession()
+        }
+    }
+}
+
+// MARK: - MainTabView
+
+private struct MainTabView: View {
+    var body: some View {
         TabView {
             HomeView()
                 .tabItem {
@@ -23,7 +42,16 @@ struct ContentView: View {
     }
 }
 
-#Preview {
+#Preview("Authenticated") {
+    ContentView()
+        .environmentObject({
+            let s = AppState()
+            s.isAuthenticated = true
+            return s
+        }())
+}
+
+#Preview("Unauthenticated") {
     ContentView()
         .environmentObject(AppState())
 }
