@@ -33,6 +33,7 @@ enum AppConfig {
 
     // MARK: - Feature Flags
 
+    static let disableAuthentication: Bool = environment == .development
     static let enableAnalytics: Bool = environment == .production
     static let enableDebugMenu: Bool = environment == .development
 }

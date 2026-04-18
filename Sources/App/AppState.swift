@@ -11,13 +11,22 @@ final class AppState: ObservableObject {
 
     private let client = APIClient.shared
 
-    init() {}
+    init() {
+        if AppConfig.disableAuthentication {
+            applyAuthBypassSession()
+        }
+    }
 
     // MARK: - Session Restore
 
     /// Called once on launch. Reads the saved token from Keychain and
     /// hydrates `currentUser` — silently signs out if the token is invalid.
     func restoreSession() async {
+        if AppConfig.disableAuthentication {
+            applyAuthBypassSession()
+            return
+        }
+
         guard KeychainHelper.shared.read(key: .authToken) != nil else { return }
 
         isLoading = true
@@ -39,9 +48,23 @@ final class AppState: ObservableObject {
     // MARK: - Sign Out
 
     func signOut() {
+        if AppConfig.disableAuthentication {
+            applyAuthBypassSession()
+            return
+        }
+
         KeychainHelper.shared.clearAll()
         currentUser = nil
         isAuthenticated = false
     }
-}
 
+    private func applyAuthBypassSession() {
+        isAuthenticated = true
+        currentUser = User(
+            id: "debug-user",
+            name: "Preview User",
+            email: "preview@claudecodeui.local"
+        )
+        errorMessage = nil
+    }
+}
