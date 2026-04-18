@@ -15,8 +15,9 @@ final class ModelsTests: XCTestCase {
 
     func testMessageEquality() {
         let id = UUID().uuidString
-        let a = Message(id: id, role: .user, content: "Hi")
-        let b = Message(id: id, role: .user, content: "Hi")
+        let timestamp = Date.now
+        let a = Message(id: id, role: .user, content: "Hi", timestamp: timestamp)
+        let b = Message(id: id, role: .user, content: "Hi", timestamp: timestamp)
         XCTAssertEqual(a, b)
     }
 

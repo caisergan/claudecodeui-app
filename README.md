@@ -6,6 +6,7 @@ A native SwiftUI iOS app built with Swift 5.10, targeting **iOS 17+**.
 
 ```
 ClaudeCodeUI/
+├── ClaudeCodeUI.xcodeproj/        # Standard Xcode iOS app project
 ├── Package.swift                  # Swift Package Manager manifest
 ├── Resources/                     # App assets (images, fonts, localizations)
 ├── Sources/
@@ -57,13 +58,35 @@ ClaudeCodeUI/
 
 1. **Open in Xcode**
    ```bash
-   open Package.swift
-   # or open the .xcodeproj once generated
+   open ClaudeCodeUI.xcodeproj
    ```
 
 2. **Select a simulator** (iPhone 15 or later recommended).
 
 3. **Run** with ⌘R.
+
+4. **Optional CLI build**
+   ```bash
+   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+   xcodebuild -project ClaudeCodeUI.xcodeproj \
+     -scheme ClaudeCodeUI \
+     -destination 'generic/platform=iOS Simulator' build
+   ```
+
+5. **Optional Makefile shortcuts**
+   ```bash
+   make open
+   make build
+   make test
+   ```
+
+If `xcodebuild` says the active developer directory is Command Line Tools, point CLI builds at full Xcode:
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
+The legacy SwiftPM entry points are still available as `make open-package`, `make build-package`, and `make test-package`, but the standard iOS app workflow now goes through `ClaudeCodeUI.xcodeproj`.
 
 ## Architecture
 

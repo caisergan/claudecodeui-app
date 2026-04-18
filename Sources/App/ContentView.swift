@@ -4,13 +4,19 @@ struct ContentView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        Group {
-            if appState.isAuthenticated {
-                MainTabView()
-            } else {
-                LoginView()
+        ZStack {
+            Color(uiColor: .systemBackground)
+                .ignoresSafeArea()
+
+            Group {
+                if appState.isAuthenticated {
+                    MainTabView()
+                } else {
+                    LoginView()
+                }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Animate the auth ↔ main transition
         .animation(.easeInOut(duration: 0.3), value: appState.isAuthenticated)
         .task {

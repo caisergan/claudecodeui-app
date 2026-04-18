@@ -115,7 +115,9 @@ final class APIClientTests: XCTestCase {
         var capturedMethod: String?
         MockURLProtocol.requestHandler = { request in
             capturedMethod = request.httpMethod
-            let data = try JSONEncoder().encode(Message(role: .assistant, content: "Hi"))
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(Message(role: .assistant, content: "Hi"))
             let response = HTTPURLResponse(
                 url: request.url!,
                 statusCode: 200,

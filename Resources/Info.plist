@@ -66,5 +66,12 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
+
+    <!-- Launch screen -->
+    <key>UILaunchScreen</key>
+    <dict>
+        <key>UIColorName</key>
+        <string>LaunchBackground</string>
+    </dict>
 </dict>
 </plist>

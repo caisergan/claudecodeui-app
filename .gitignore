@@ -21,6 +21,8 @@ DerivedData/
 # ── CocoaPods (if ever adopted) ─────────────────────────────────────────────
 Pods/
 *.xcworkspace
+!*.xcodeproj/project.xcworkspace/
+!*.xcodeproj/project.xcworkspace/contents.xcworkspacedata
 
 # ── Fastlane ────────────────────────────────────────────────────────────────
 fastlane/report.xml
@@ -48,3 +50,5 @@ AuthKey_*.p8
 .idea/
 *.swp
 *~
+
+.omx/

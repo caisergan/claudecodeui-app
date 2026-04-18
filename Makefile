@@ -1,15 +1,30 @@
-.PHONY: build test clean lint format open
+.PHONY: build test clean lint format open open-package build-ios test-ios build-package test-package
 
 # ── Open in Xcode ─────────────────────────────────────────────────────────────
 open:
+	open ClaudeCodeUI.xcodeproj
+
+open-package:
 	open Package.swift
 
-# ── Build (SPM) ───────────────────────────────────────────────────────────────
+# ── Build (Xcode / iOS Simulator) ────────────────────────────────────────────
 build:
+	DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project ClaudeCodeUI.xcodeproj -scheme ClaudeCodeUI -destination 'generic/platform=iOS Simulator' build
+
+build-ios:
+	DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project ClaudeCodeUI.xcodeproj -scheme ClaudeCodeUI -destination 'generic/platform=iOS Simulator' build
+
+build-package:
 	swift build
 
 # ── Test ──────────────────────────────────────────────────────────────────────
 test:
+	DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project ClaudeCodeUI.xcodeproj -scheme ClaudeCodeUI -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+
+test-ios:
+	DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project ClaudeCodeUI.xcodeproj -scheme ClaudeCodeUI -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+
+test-package:
 	swift test --parallel
 
 # ── Clean build artefacts ─────────────────────────────────────────────────────
