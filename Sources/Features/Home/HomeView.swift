@@ -133,12 +133,22 @@ private struct UsageStatusBadge: View {
 struct WarmupRow: View {
     let provider: AIProvider
     let state: WarmupState
+    let lastSuccessfulWarmupDate: Date?
     let onWarmup: () -> Void
 
     var body: some View {
         HStack {
-            Text(provider.displayName)
-                .font(.subheadline)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(provider.displayName)
+                    .font(.subheadline)
+
+                if let lastSuccessfulWarmupDate {
+                    Text("Last success \(lastSuccessfulWarmupDate.absoluteTimeDescription)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
 
             Spacer()
 
@@ -211,6 +221,7 @@ struct HomeView: View {
                             WarmupRow(
                                 provider: provider,
                                 state: viewModel.warmupStates[provider] ?? .idle,
+                                lastSuccessfulWarmupDate: viewModel.lastSuccessfulWarmupDates[provider],
                                 onWarmup: {
                                     Task { await viewModel.warmupProvider(provider) }
                                 }

@@ -51,6 +51,42 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertNil(storage.warmupSessionId(for: .claude))
     }
 
+    func testWarmupStoresLastSuccessfulTimestampPerProvider() async throws {
+        let session = makeMockSession { request in
+            switch request.url?.path {
+            case "/health":
+                return try Self.jsonResponse(
+                    ["status": "ok", "timestamp": "2026-04-19T00:00:00Z", "appInstallPath": "/tmp/project"],
+                    for: request
+                )
+            case "/api/agent":
+                return try Self.jsonResponse(
+                    ["success": true, "sessionId": "codex-session-1"],
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = makeViewModel(session: session)
+        let startedAt = Date()
+
+        await viewModel.warmupProvider(.codex)
+
+        let storedDate = try XCTUnwrap(storage.lastSuccessfulWarmupDate(for: .codex))
+        let viewModelDate = try XCTUnwrap(viewModel.lastSuccessfulWarmupDates[.codex])
+        XCTAssertGreaterThanOrEqual(storedDate.timeIntervalSince1970, startedAt.timeIntervalSince1970)
+        XCTAssertLessThanOrEqual(storedDate.timeIntervalSinceNow, 1)
+        XCTAssertEqual(
+            viewModelDate.timeIntervalSince1970,
+            storedDate.timeIntervalSince1970,
+            accuracy: 0.01
+        )
+        XCTAssertNil(storage.lastSuccessfulWarmupDate(for: .claude))
+    }
+
     func testWarmupReusesStoredSessionForSameProvider() async throws {
         storage.setWarmupSessionId("codex-session-existing", for: .codex)
 
@@ -171,6 +207,45 @@ final class HomeViewModelTests: XCTestCase {
             """
         )
         XCTAssertEqual(viewModel.errorMessage, "Codex warmup failed: \(message)")
+    }
+
+    func testLoadProviderSettingsRestoresStoredLastSuccessfulWarmupDate() {
+        let storedDate = Date(timeIntervalSince1970: 1_713_571_200)
+        storage.setLastSuccessfulWarmupDate(storedDate, for: .gemini)
+
+        let viewModel = HomeViewModel(storage: storage)
+        viewModel.loadProviderSettings()
+
+        XCTAssertEqual(viewModel.lastSuccessfulWarmupDates[.gemini], storedDate)
+        XCTAssertNil(viewModel.lastSuccessfulWarmupDates[.codex])
+    }
+
+    func testWarmupFailureKeepsPreviousSuccessfulTimestamp() async throws {
+        let existingDate = Date(timeIntervalSince1970: 1_713_571_200)
+        storage.setLastSuccessfulWarmupDate(existingDate, for: .codex)
+
+        let session = makeMockSession { request in
+            switch request.url?.path {
+            case "/health":
+                return try Self.jsonResponse(
+                    ["status": "ok", "timestamp": "2026-04-19T00:00:00Z", "appInstallPath": "/tmp/project"],
+                    for: request
+                )
+            case "/api/agent":
+                throw URLError(.badServerResponse)
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = makeViewModel(session: session)
+        viewModel.loadProviderSettings()
+
+        await viewModel.warmupProvider(.codex)
+
+        XCTAssertEqual(storage.lastSuccessfulWarmupDate(for: .codex), existingDate)
+        XCTAssertEqual(viewModel.lastSuccessfulWarmupDates[.codex], existingDate)
     }
 
     func testUsageProvidersExcludeClaudeAndRefreshRequestsOnlyNonClaudeProviders() async throws {

@@ -60,6 +60,7 @@ final class UserDefaultsStorage {
 
     private let providerPreferencesKey = "providerPreferences"
     private let warmupSessionIdsKey = "warmupSessionIds"
+    private let lastSuccessfulWarmupDatesKey = "lastSuccessfulWarmupDates"
 
     var providerPreferences: [String: ProviderPreference] {
         get {
@@ -85,6 +86,21 @@ final class UserDefaultsStorage {
         }
     }
 
+    var lastSuccessfulWarmupDates: [String: Date] {
+        get {
+            guard let data = store.data(forKey: lastSuccessfulWarmupDatesKey),
+                  let decoded = try? JSONDecoder().decode([String: Date].self, from: data) else {
+                return [:]
+            }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                store.set(data, forKey: lastSuccessfulWarmupDatesKey)
+            }
+        }
+    }
+
     func preference(for provider: AIProvider) -> ProviderPreference {
         providerPreferences[provider.rawValue] ?? .default
     }
@@ -103,5 +119,15 @@ final class UserDefaultsStorage {
         var all = warmupSessionIds
         all[provider.rawValue] = sessionId
         warmupSessionIds = all
+    }
+
+    func lastSuccessfulWarmupDate(for provider: AIProvider) -> Date? {
+        lastSuccessfulWarmupDates[provider.rawValue]
+    }
+
+    func setLastSuccessfulWarmupDate(_ date: Date, for provider: AIProvider) {
+        var all = lastSuccessfulWarmupDates
+        all[provider.rawValue] = date
+        lastSuccessfulWarmupDates = all
     }
 }

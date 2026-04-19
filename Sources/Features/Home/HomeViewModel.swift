@@ -30,6 +30,7 @@ final class HomeViewModel: ObservableObject {
     @Published var preferences: [AIProvider: ProviderPreference] = [:]
     @Published var usageSummaries: [ProviderUsageSummary] = []
     @Published var warmupStates: [AIProvider: WarmupState] = [:]
+    @Published var lastSuccessfulWarmupDates: [AIProvider: Date] = [:]
     @Published var isLoadingUsage: Bool = false
 
     private let client: APIClient
@@ -98,6 +99,12 @@ final class HomeViewModel: ObservableObject {
             }
             if warmupStates[provider] == nil {
                 warmupStates[provider] = .idle
+            }
+
+            if let lastSuccessfulWarmupDate = storage.lastSuccessfulWarmupDate(for: provider) {
+                lastSuccessfulWarmupDates[provider] = lastSuccessfulWarmupDate
+            } else {
+                lastSuccessfulWarmupDates.removeValue(forKey: provider)
             }
         }
     }
@@ -206,6 +213,9 @@ final class HomeViewModel: ObservableObject {
                 storage.setWarmupSessionId(newSessionId, for: provider)
             }
 
+            let completedAt = Date()
+            storage.setLastSuccessfulWarmupDate(completedAt, for: provider)
+            lastSuccessfulWarmupDates[provider] = completedAt
             warmupStates[provider] = .success
         } catch {
             presentWarmupFailure(error.localizedDescription, for: provider)
