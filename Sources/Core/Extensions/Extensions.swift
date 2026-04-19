@@ -22,6 +22,19 @@ extension Date {
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: self, relativeTo: .now)
     }
+
+    var absoluteTimeDescription: String {
+        let formatter = DateFormatter()
+        if Calendar.current.isDateInToday(self) {
+            formatter.dateFormat = "h:mm a"
+        } else if Calendar.current.isDateInTomorrow(self) {
+            formatter.dateFormat = "'Tomorrow,' h:mm a"
+        } else {
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+        }
+        return formatter.string(from: self)
+    }
 }
 
 // MARK: - Collection Extensions

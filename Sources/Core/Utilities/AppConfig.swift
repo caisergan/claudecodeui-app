@@ -72,6 +72,26 @@ enum AppConfig {
         return result
     }
 
+    private static func boolEnvValue(for keys: [String]) -> Bool? {
+        for key in keys {
+            guard let rawValue = envValues[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !rawValue.isEmpty else {
+                continue
+            }
+
+            switch rawValue.lowercased() {
+            case "1", "true", "yes", "on":
+                return true
+            case "0", "false", "no", "off":
+                return false
+            default:
+                continue
+            }
+        }
+
+        return nil
+    }
+
     // MARK: - API
 
     private static func normalizedAPIBaseURL(from rawValue: String) -> URL? {
@@ -102,12 +122,20 @@ enum AppConfig {
         }
         switch environment {
         case .development:
-            return URL(string: "http://localhost:3000/api")!
+            return normalizedAPIBaseURL(from: "http://localhost:3000/api")!
         case .staging:
-            return URL(string: "https://staging.api.claudecodeui.com/api")!
+            return normalizedAPIBaseURL(from: "https://staging.api.claudecodeui.com/api")!
         case .production:
-            return URL(string: "https://api.claudecodeui.com/api")!
+            return normalizedAPIBaseURL(from: "https://api.claudecodeui.com/api")!
         }
+    }
+
+    static var hasExplicitAPIBaseURL: Bool {
+        guard let envURL = envValues["api_base_url"], !envURL.isEmpty else {
+            return false
+        }
+
+        return normalizedAPIBaseURL(from: envURL) != nil
     }
 
     static var serverBaseURL: URL {
@@ -179,7 +207,17 @@ enum AppConfig {
 
     // MARK: - Feature Flags
 
-    static let disableAuthentication: Bool = environment == .development
+    static let disableAuthentication: Bool = {
+        if let override = boolEnvValue(for: [
+            "disable_authentication",
+            "preview_mode",
+            "auth_bypass"
+        ]) {
+            return override
+        }
+
+        return environment == .development && !hasExplicitAPIBaseURL
+    }()
     static let enableAnalytics: Bool = environment == .production
     static let enableDebugMenu: Bool = environment == .development
 }

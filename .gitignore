@@ -1,5 +1,6 @@
 # ── Xcode ──────────────────────────────────────────────────────────────────
 *.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/
 *.xcworkspace/xcuserdata/
 *.xcworkspace/xcshareddata/!*.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
 DerivedData/
@@ -12,7 +13,6 @@ DerivedData/
 !default.mode2v3
 *.perspectivev3
 !default.perspectivev3
-ClaudeCodeUI.xcodeproj/
 
 # ── Swift Package Manager ───────────────────────────────────────────────────
 .build/
@@ -51,6 +51,6 @@ AuthKey_*.p8
 .idea/
 *.swp
 *~
-
 .omx/
 .worktrees/
+.gemini-clipboard/

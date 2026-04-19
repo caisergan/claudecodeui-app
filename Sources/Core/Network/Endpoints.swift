@@ -44,11 +44,11 @@ enum API {
     }
 
     // MARK: Auth
-    static func login(email: String, password: String) -> Endpoint {
+    static func login(username: String, password: String) -> Endpoint {
         Endpoint(
             path: "/auth/login",
             method: .post,
-            body: ["email": email, "password": password],
+            body: ["username": username, "password": password],
             authMode: .none
         )
     }
@@ -58,7 +58,7 @@ enum API {
     }
 
     static var me: Endpoint {
-        Endpoint(path: "/auth/me")
+        Endpoint(path: "/auth/user")
     }
 
     // MARK: Settings
