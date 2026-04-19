@@ -2,6 +2,23 @@ import Foundation
 import Combine
 import SwiftUI
 
+private enum WarmupProjectPathResolutionError: LocalizedError {
+    case healthCheckFailed(String)
+    case unresolved
+
+    var errorDescription: String? {
+        switch self {
+        case .healthCheckFailed(let reason):
+            return "Warmup could not reach the backend health check. \(reason)"
+        case .unresolved:
+            return """
+            Warmup could not resolve the server project path automatically. \
+            Set warmup_project_path in .env or ensure /health returns appInstallPath.
+            """
+        }
+    }
+}
+
 @MainActor
 final class HomeViewModel: ObservableObject {
     @Published var conversations: [Conversation] = []
@@ -138,7 +155,6 @@ final class HomeViewModel: ObservableObject {
         let model: String? = pref.warmupModel.isEmpty ? nil : pref.warmupModel
         let sessionId = storage.warmupSessionId(for: provider)
         let apiKey = AppConfig.resolvedAgentAPIKey
-        let projectPath = await resolveWarmupProjectPath()
 
         if apiKey?.isBlank != false {
             presentWarmupFailure(
@@ -149,11 +165,11 @@ final class HomeViewModel: ObservableObject {
             return
         }
 
-        if projectPath?.isBlank != false {
-            presentWarmupFailure(
-                "Warmup could not resolve the server project path automatically.",
-                for: provider
-            )
+        let projectPath: String
+        do {
+            projectPath = try await resolveWarmupProjectPath()
+        } catch {
+            presentWarmupFailure(error.localizedDescription, for: provider)
             scheduleReset(for: provider)
             return
         }
@@ -184,7 +200,7 @@ final class HomeViewModel: ObservableObject {
         scheduleReset(for: provider)
     }
 
-    private func resolveWarmupProjectPath() async -> String? {
+    private func resolveWarmupProjectPath() async throws -> String {
         if let configuredProjectPath = AppConfig.defaultProjectPath, !configuredProjectPath.isBlank {
             return configuredProjectPath
         }
@@ -204,11 +220,10 @@ final class HomeViewModel: ObservableObject {
                 return appInstallPath
             }
         } catch {
-            errorMessage = "Failed to resolve server project path: \(error.localizedDescription)"
-            showError = true
+            throw WarmupProjectPathResolutionError.healthCheckFailed(error.localizedDescription)
         }
 
-        return nil
+        throw WarmupProjectPathResolutionError.unresolved
     }
 
     private func scheduleReset(for provider: AIProvider) {

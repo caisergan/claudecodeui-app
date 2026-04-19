@@ -18,6 +18,54 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .gemini: return "Gemini"
         }
     }
+
+    var supportedWarmupModels: [String] {
+        switch self {
+        case .claude:
+            return [
+                "sonnet",
+                "opus",
+                "haiku",
+                "opusplan",
+                "sonnet[1m]",
+                "opus[1m]"
+            ]
+        case .codex:
+            return [
+                "gpt-5.4",
+                "gpt-5.4-mini",
+                "gpt-5.3-codex",
+                "gpt-5.2-codex",
+                "gpt-5.2",
+                "gpt-5.1-codex-max",
+                "o3",
+                "o4-mini"
+            ]
+        case .cursor:
+            return []
+        case .gemini:
+            return [
+                "gemini-3.1-pro-preview",
+                "gemini-3-pro-preview",
+                "gemini-3-flash-preview",
+                "gemini-2.5-flash",
+                "gemini-2.5-pro",
+                "gemini-2.0-flash-lite",
+                "gemini-2.0-flash",
+                "gemini-2.0-pro-experimental",
+                "gemini-2.0-flash-thinking"
+            ]
+        }
+    }
+
+    func warmupModelMenuOptions(including currentSelection: String) -> [String] {
+        let models = supportedWarmupModels
+        guard !models.isEmpty else { return [] }
+        guard !currentSelection.isEmpty, !models.contains(currentSelection) else {
+            return models
+        }
+        return [currentSelection] + models
+    }
 }
 
 // MARK: - Provider Preference

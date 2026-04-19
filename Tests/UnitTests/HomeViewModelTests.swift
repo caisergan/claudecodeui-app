@@ -115,6 +115,64 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertEqual(storage.warmupSessionId(for: .codex), "codex-session-existing")
     }
 
+    func testWarmupSurfacesHealthCheckFailure() async {
+        let session = makeMockSession { request in
+            switch request.url?.path {
+            case "/health":
+                throw URLError(.cannotConnectToHost)
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = makeViewModel(session: session)
+
+        await viewModel.warmupProvider(.codex)
+
+        guard case .failure(let message) = viewModel.warmupStates[.codex] else {
+            return XCTFail("Expected codex warmup to fail")
+        }
+
+        XCTAssertTrue(
+            message.hasPrefix("Warmup could not reach the backend health check."),
+            "Unexpected failure message: \(message)"
+        )
+        XCTAssertEqual(viewModel.errorMessage, "Codex warmup failed: \(message)")
+    }
+
+    func testWarmupShowsActionableProjectPathMessageWhenHealthHasNoInstallPath() async throws {
+        let session = makeMockSession { request in
+            switch request.url?.path {
+            case "/health":
+                return try Self.jsonResponse(
+                    ["status": "ok", "timestamp": "2026-04-19T00:00:00Z"],
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = makeViewModel(session: session)
+
+        await viewModel.warmupProvider(.codex)
+
+        guard case .failure(let message) = viewModel.warmupStates[.codex] else {
+            return XCTFail("Expected codex warmup to fail")
+        }
+
+        XCTAssertEqual(
+            message,
+            """
+            Warmup could not resolve the server project path automatically. \
+            Set warmup_project_path in .env or ensure /health returns appInstallPath.
+            """
+        )
+        XCTAssertEqual(viewModel.errorMessage, "Codex warmup failed: \(message)")
+    }
+
     private func makeViewModel(session: URLSession) -> HomeViewModel {
         HomeViewModel(
             client: APIClient(baseURL: URL(string: "https://mock.test/api")!, session: session),

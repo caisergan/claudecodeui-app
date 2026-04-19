@@ -103,7 +103,20 @@ private struct ProviderRow: View {
     let onToggle: (Bool) -> Void
     let onModelChange: (String) -> Void
 
-    @State private var modelText: String = ""
+    private var modelSelection: Binding<String> {
+        Binding(
+            get: { preference.warmupModel },
+            set: { onModelChange($0) }
+        )
+    }
+
+    private var supportedModels: [String] {
+        provider.supportedWarmupModels
+    }
+
+    private var menuOptions: [String] {
+        provider.warmupModelMenuOptions(including: preference.warmupModel)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -113,24 +126,43 @@ private struct ProviderRow: View {
             ))
 
             if preference.isEnabled {
-                HStack {
-                    Text("Model")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    TextField("Default", text: $modelText)
+                if supportedModels.isEmpty {
+                    HStack {
+                        Text("Model")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        TextField(
+                            "Default",
+                            text: Binding(
+                                get: { preference.warmupModel },
+                                set: { onModelChange($0) }
+                            )
+                        )
                         .font(.subheadline)
                         .textFieldStyle(.roundedBorder)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                        .onSubmit { onModelChange(modelText) }
+                    }
+                } else {
+                    Picker("Model", selection: modelSelection) {
+                        Text("Default").tag("")
+                        ForEach(menuOptions, id: \.self) { model in
+                            Text(modelRowTitle(for: model))
+                                .tag(model)
+                        }
+                    }
+                    .pickerStyle(.menu)
                 }
             }
         }
         .padding(.vertical, 2)
-        .onAppear { modelText = preference.warmupModel }
-        .onChange(of: preference.warmupModel) { _, newValue in
-            modelText = newValue
+    }
+
+    private func modelRowTitle(for model: String) -> String {
+        guard model == preference.warmupModel, !supportedModels.contains(model) else {
+            return model
         }
+        return "\(model) (saved)"
     }
 }
 
