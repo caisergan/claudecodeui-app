@@ -73,6 +73,15 @@ struct WarmupResponse: Codable {
     let sessionId: String?
 }
 
+// MARK: - Health Response
+
+struct ServerHealthResponse: Codable {
+    let status: String
+    let timestamp: String
+    let installMode: String?
+    let appInstallPath: String?
+}
+
 // MARK: - Usage Limits Response
 
 struct UsageLimitsResponse: Codable {

@@ -8,6 +8,11 @@ import Foundation
 
 enum API {
 
+    // MARK: Server Root
+    static var health: Endpoint {
+        Endpoint(path: "/health", authMode: .none)
+    }
+
     // MARK: Conversations
     static var conversations: Endpoint {
         Endpoint(path: "/conversations")
@@ -43,7 +48,8 @@ enum API {
         Endpoint(
             path: "/auth/login",
             method: .post,
-            body: ["email": email, "password": password]
+            body: ["email": email, "password": password],
+            authMode: .none
         )
     }
 
@@ -78,6 +84,7 @@ enum API {
             path: "/agent",
             method: .post,
             body: body,
+            bodyKeyEncodingStrategy: .useDefaultKeys,
             authMode: .apiKey
         )
     }

@@ -151,6 +151,44 @@ final class APIClientTests: XCTestCase {
         XCTAssertTrue(url.contains("refresh=true"), "URL should contain refresh query: \(url)")
     }
 
+    func testEndpointDefaultsToJWTAuth() {
+        let endpoint = Endpoint(path: "/protected")
+
+        switch endpoint.authMode {
+        case .jwt:
+            break
+        default:
+            XCTFail("App endpoints should default to JWT auth")
+        }
+    }
+
+    func testAPIKeyRequestsPreferEnvKeyOverKeychainValue() throws {
+        let resolved = AppConfig.preferredAgentAPIKey(
+            envValue: "env-key",
+            keychainValue: "keychain-key"
+        )
+
+        XCTAssertEqual(resolved, "env-key")
+    }
+
+    func testAPIKey401ReturnsServerErrorMessage() async {
+        let payload = #"{"error":"Invalid or inactive API key"}"#.data(using: .utf8)!
+        let session = URLSession.mock(data: payload, statusCode: 401)
+        let client = APIClient(baseURL: baseURL, session: session)
+
+        do {
+            _ = try await client.request(
+                Endpoint(path: "/agent", authMode: .apiKey),
+                responseType: WarmupResponse.self
+            )
+            XCTFail("Expected APIError.serverError")
+        } catch APIError.serverError(let message) {
+            XCTAssertEqual(message, "Invalid or inactive API key")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     // MARK: - CLI status path
 
     func testCLIStatusEndpointPath() throws {
@@ -180,23 +218,22 @@ final class APIClientTests: XCTestCase {
     // MARK: - Agent request body shape
 
     func testAgentRequestBodyContainsExpectedFields() throws {
-        let payload = WarmupRequestPayload(
+        let client = APIClient(baseURL: baseURL, session: .shared)
+        let endpoint = API.agent(body: WarmupRequestPayload(
             provider: .cursor,
             model: "gpt-4",
             sessionId: "sess-123",
             projectPath: "/projects/test"
-        )
-
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        let data = try encoder.encode(payload)
+        ))
+        let request = try client.buildRequest(for: endpoint)
+        let data = try XCTUnwrap(request.httpBody)
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
 
         XCTAssertEqual(json["message"] as? String, "ping")
         XCTAssertEqual(json["provider"] as? String, "cursor")
         XCTAssertEqual(json["model"] as? String, "gpt-4")
-        XCTAssertEqual(json["session_id"] as? String, "sess-123")
-        XCTAssertEqual(json["project_path"] as? String, "/projects/test")
+        XCTAssertEqual(json["sessionId"] as? String, "sess-123")
+        XCTAssertEqual(json["projectPath"] as? String, "/projects/test")
         XCTAssertEqual(json["stream"] as? Bool, false)
     }
 

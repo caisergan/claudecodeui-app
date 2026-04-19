@@ -609,3 +609,7 @@
 	};
 	rootObject = AA0000000000000000000001 /* Project object */;
 }
+		CA0000000000000000000023 /* ProviderModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000023 /* ProviderModels.swift */; };
+		BA0000000000000000000023 /* ProviderModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderModels.swift; sourceTree = "<group>"; };
+				BA0000000000000000000023 /* ProviderModels.swift */,
+				CA0000000000000000000023 /* ProviderModels.swift in Sources */,

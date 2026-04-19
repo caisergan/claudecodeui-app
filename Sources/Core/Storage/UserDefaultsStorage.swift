@@ -31,7 +31,15 @@ struct UserDefault<Value> {
 
 final class UserDefaultsStorage {
     static let shared = UserDefaultsStorage()
-    private init() {}
+    private let store: UserDefaults
+
+    private init() {
+        self.store = .standard
+    }
+
+    init(store: UserDefaults) {
+        self.store = store
+    }
 
     @UserDefault(key: "hasCompletedOnboarding", default: false)
     var hasCompletedOnboarding: Bool
@@ -96,6 +104,4 @@ final class UserDefaultsStorage {
         all[provider.rawValue] = sessionId
         warmupSessionIds = all
     }
-
-    private var store: UserDefaults { .standard }
 }

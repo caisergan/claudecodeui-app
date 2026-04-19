@@ -17,6 +17,7 @@ struct Endpoint {
     let path: String
     let method: HTTPMethod
     let body: Encodable?
+    let bodyKeyEncodingStrategy: JSONEncoder.KeyEncodingStrategy
     let queryItems: [URLQueryItem]
     let extraHeaders: [String: String]
     let authMode: AuthMode
@@ -25,6 +26,7 @@ struct Endpoint {
         path: String,
         method: HTTPMethod = .get,
         body: Encodable? = nil,
+        bodyKeyEncodingStrategy: JSONEncoder.KeyEncodingStrategy = .convertToSnakeCase,
         queryItems: [URLQueryItem] = [],
         extraHeaders: [String: String] = [:],
         authMode: AuthMode = .jwt
@@ -32,6 +34,7 @@ struct Endpoint {
         self.path = path
         self.method = method
         self.body = body
+        self.bodyKeyEncodingStrategy = bodyKeyEncodingStrategy
         self.queryItems = queryItems
         self.extraHeaders = extraHeaders
         self.authMode = authMode
@@ -46,6 +49,11 @@ enum HTTPMethod: String {
     case delete = "DELETE"
 }
 
+private struct APIErrorPayload: Decodable {
+    let error: String?
+    let message: String?
+}
+
 // MARK: - APIClient
 
 final class APIClient {
@@ -54,15 +62,12 @@ final class APIClient {
     private let session: URLSession
     private let baseURL: URL
     private let decoder = JSONDecoder()
-    private let encoder = JSONEncoder()
 
     init(baseURL: URL = AppConfig.apiBaseURL, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.session = session
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         decoder.dateDecodingStrategy = .iso8601
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        encoder.dateEncodingStrategy = .iso8601
     }
 
     // MARK: - Generic Request
@@ -85,10 +90,8 @@ final class APIClient {
             } catch {
                 throw APIError.decodingFailed
             }
-        case 401:
-            throw APIError.unauthorized
         default:
-            throw APIError.requestFailed(statusCode: httpResponse.statusCode)
+            throw error(for: endpoint, data: data, response: httpResponse)
         }
     }
 
@@ -98,11 +101,8 @@ final class APIClient {
 
         guard let httpResponse = response as? HTTPURLResponse else { return }
 
-        if httpResponse.statusCode == 401 {
-            throw APIError.unauthorized
-        }
         if !(200...299).contains(httpResponse.statusCode) {
-            throw APIError.requestFailed(statusCode: httpResponse.statusCode)
+            throw error(for: endpoint, data: Data(), response: httpResponse)
         }
     }
 
@@ -138,7 +138,7 @@ final class APIClient {
                 request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
         case .apiKey:
-            if let key = KeychainHelper.shared.read(key: .agentAPIKey) {
+            if let key = AppConfig.resolvedAgentAPIKey {
                 request.setValue(key, forHTTPHeaderField: "x-api-key")
             }
         case .none:
@@ -151,9 +151,34 @@ final class APIClient {
         }
 
         if let body = endpoint.body {
+            let encoder = JSONEncoder()
+            encoder.keyEncodingStrategy = endpoint.bodyKeyEncodingStrategy
+            encoder.dateEncodingStrategy = .iso8601
             request.httpBody = try encoder.encode(body)
         }
 
         return request
+    }
+
+    private func error(
+        for endpoint: Endpoint,
+        data: Data,
+        response: HTTPURLResponse
+    ) -> APIError {
+        if response.statusCode == 401, endpoint.authMode == .jwt {
+            return .unauthorized
+        }
+
+        if let payload = try? decoder.decode(APIErrorPayload.self, from: data),
+           let message = payload.error ?? payload.message,
+           !message.isBlank {
+            return .serverError(message)
+        }
+
+        if response.statusCode == 401 {
+            return .unauthorized
+        }
+
+        return .requestFailed(statusCode: response.statusCode)
     }
 }

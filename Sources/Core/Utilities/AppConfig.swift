@@ -21,20 +21,42 @@ enum AppConfig {
     // MARK: - .env
 
     private static let envValues: [String: String] = {
-        // Look for .env in the main bundle first, then fall back to project root (simulator only)
-        if let bundlePath = Bundle.main.path(forResource: ".env", ofType: nil),
-           let contents = try? String(contentsOfFile: bundlePath, encoding: .utf8) {
-            return parseEnv(contents)
+        for candidate in envCandidatePaths() {
+            if let contents = try? String(contentsOfFile: candidate, encoding: .utf8) {
+                return parseEnv(contents)
+            }
         }
-        #if DEBUG
-        // In simulator builds, try reading from the project source root
-        if let projectDir = ProcessInfo.processInfo.environment["PROJECT_DIR"],
-           let contents = try? String(contentsOfFile: "\(projectDir)/.env", encoding: .utf8) {
-            return parseEnv(contents)
-        }
-        #endif
         return [:]
     }()
+
+    private static func envCandidatePaths() -> [String] {
+        var paths: [String] = []
+
+        if let bundlePath = Bundle.main.path(forResource: ".env", ofType: nil) {
+            paths.append(bundlePath)
+        }
+
+        #if DEBUG
+        // PROJECT_DIR is often present during builds, but not reliably at runtime.
+        if let projectDir = ProcessInfo.processInfo.environment["PROJECT_DIR"] {
+            paths.append("\(projectDir)/.env")
+        }
+
+        // Use the compile-time source file path to find the repo root in debug builds.
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // Utilities
+            .deletingLastPathComponent() // Core
+            .deletingLastPathComponent() // Sources
+            .deletingLastPathComponent() // repo root
+            .path
+        paths.append("\(repoRoot)/.env")
+
+        let currentDirectory = FileManager.default.currentDirectoryPath
+        paths.append("\(currentDirectory)/.env")
+        #endif
+
+        return Array(NSOrderedSet(array: paths)) as? [String] ?? paths
+    }
 
     private static func parseEnv(_ contents: String) -> [String: String] {
         var result: [String: String] = [:]
@@ -52,9 +74,30 @@ enum AppConfig {
 
     // MARK: - API
 
+    private static func normalizedAPIBaseURL(from rawValue: String) -> URL? {
+        guard let url = URL(string: rawValue),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        #if DEBUG
+        // The iOS simulator may prefer IPv6 for "localhost", while the local CloudCLI
+        // server commonly binds only on IPv4. Force IPv4 loopback for local debug URLs.
+        if components.host == "localhost" {
+            components.host = "127.0.0.1"
+        }
+        #endif
+
+        if components.path.isEmpty || components.path == "/" {
+            components.path = "/api"
+        }
+
+        return components.url
+    }
+
     static var apiBaseURL: URL {
         if let envURL = envValues["api_base_url"], !envURL.isEmpty,
-           let url = URL(string: envURL) {
+           let url = normalizedAPIBaseURL(from: envURL) {
             return url
         }
         switch environment {
@@ -67,12 +110,71 @@ enum AppConfig {
         }
     }
 
+    static var serverBaseURL: URL {
+        guard var components = URLComponents(url: apiBaseURL, resolvingAgainstBaseURL: false) else {
+            return apiBaseURL
+        }
+
+        if components.path.hasSuffix("/api") {
+            components.path = String(components.path.dropLast(4))
+        }
+
+        if components.path == "/" {
+            components.path = ""
+        }
+
+        return components.url ?? apiBaseURL
+    }
+
     // MARK: - Agent / Warmup
 
-    /// Project path sent with warmup requests.
-    /// TODO: Replace with real project selection once project browsing is implemented.
+    static var agentAPIKey: String? {
+        let candidates = [
+            envValues["ccui_api_key"],
+            envValues["CCUI_API_KEY"],
+            envValues["agent_api_key"],
+            envValues["api_key"],
+            envValues["API_KEY"]
+        ]
+
+        return candidates.first { value in
+            guard let value else { return false }
+            return !value.isBlank
+        } ?? nil
+    }
+
+    static func preferredAgentAPIKey(
+        envValue: String?,
+        keychainValue: String?
+    ) -> String? {
+        if let envValue, !envValue.isBlank {
+            return envValue
+        }
+
+        if let keychainValue, !keychainValue.isBlank {
+            return keychainValue
+        }
+
+        return nil
+    }
+
+    static var resolvedAgentAPIKey: String? {
+        preferredAgentAPIKey(
+            envValue: agentAPIKey,
+            keychainValue: KeychainHelper.shared.read(key: .agentAPIKey)
+        )
+    }
+
     static var defaultProjectPath: String? {
-        nil
+        let candidates = [
+            envValues["project_path"],
+            envValues["warmup_project_path"]
+        ]
+
+        return candidates.first { value in
+            guard let value else { return false }
+            return !value.isBlank
+        } ?? nil
     }
 
     // MARK: - Feature Flags
