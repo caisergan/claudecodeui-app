@@ -200,6 +200,26 @@ final class APIClientTests: XCTestCase {
         XCTAssertTrue(url.contains("/cli/gemini/status"), "URL should contain CLI status path: \(url)")
     }
 
+    func testLoginEndpointUsesUsernamePayload() throws {
+        let client = APIClient(baseURL: baseURL, session: .shared)
+        let endpoint = API.login(username: "alice", password: "secret123")
+        let request = try client.buildRequest(for: endpoint)
+        let body = try XCTUnwrap(request.httpBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+
+        XCTAssertEqual(request.url?.path, "/api/auth/login")
+        XCTAssertEqual(json["username"], "alice")
+        XCTAssertEqual(json["password"], "secret123")
+        XCTAssertNil(json["email"])
+    }
+
+    func testCurrentUserEndpointPathUsesBackendRoute() throws {
+        let client = APIClient(baseURL: baseURL, session: .shared)
+        let request = try client.buildRequest(for: API.me)
+
+        XCTAssertEqual(request.url?.path, "/api/auth/user")
+    }
+
     // MARK: - Agent endpoint uses apiKey auth mode
 
     func testAgentEndpointUsesAPIKeyAuth() throws {

@@ -21,6 +21,16 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(a, b)
     }
 
+    func testAuthenticatedUserPayloadDecodesIntegerIDs() throws {
+        let data = #"{"id":42,"username":"alice"}"#.data(using: .utf8)!
+
+        let payload = try JSONDecoder().decode(AuthenticatedUserPayload.self, from: data)
+
+        XCTAssertEqual(payload.id, "42")
+        XCTAssertEqual(payload.username, "alice")
+        XCTAssertEqual(payload.asAppUser(), User(id: "42", name: "alice", email: "alice"))
+    }
+
     // MARK: - Conversation
 
     func testConversationDefaultsToEmpty() {
@@ -101,5 +111,150 @@ final class ModelsTests: XCTestCase {
 
         XCTAssertEqual(options.first, "gpt-5.4")
         XCTAssertEqual(options.filter { $0 == "gpt-5.4" }.count, 1)
+    }
+
+    func testProviderUsageSummaryFormatsQuotaWindowsAndMetadata() {
+        let result = ProviderUsageResult(
+            provider: "codex",
+            installed: true,
+            authenticated: true,
+            account: "dev@example.com",
+            authMethod: "chatgpt",
+            authError: nil,
+            planType: "ChatGPT Plus",
+            organization: nil,
+            state: "available",
+            limitReached: false,
+            resetAt: nil,
+            lastSeenAt: nil,
+            message: "Codex usage data was fetched successfully.",
+            supportLevel: "direct_api",
+            supportsRemainingQuota: true,
+            scannedFiles: nil,
+            source: "codex_wham_usage_api",
+            limits: ProviderUsageLimits(
+                primary: UsageQuotaWindow(
+                    name: nil,
+                    limitId: nil,
+                    usedPercent: nil,
+                    remainingPercent: 82,
+                    limitWindowSeconds: 18_000,
+                    resetAfterSeconds: nil,
+                    resetAt: nil
+                ),
+                secondary: UsageQuotaWindow(
+                    name: nil,
+                    limitId: nil,
+                    usedPercent: nil,
+                    remainingPercent: 41,
+                    limitWindowSeconds: 604_800,
+                    resetAfterSeconds: nil,
+                    resetAt: nil
+                ),
+                codeReviewPrimary: nil,
+                codeReviewSecondary: nil,
+                additional: []
+            ),
+            credits: nil,
+            spendControl: nil
+        )
+
+        let summary = result.usageSummary(for: .codex)
+
+        XCTAssertEqual(summary.status, .ready)
+        XCTAssertEqual(summary.quotaWindows.count, 2)
+        XCTAssertEqual(summary.quotaWindows[0].label, "5h")
+        XCTAssertEqual(summary.quotaWindows[0].remaining, 82)
+        XCTAssertEqual(summary.quotaWindows[1].label, "7d")
+        XCTAssertEqual(summary.quotaWindows[1].remaining, 41)
+        XCTAssertNil(summary.statusMessage)
+        XCTAssertEqual(summary.metadata, "ChatGPT Plus \u{2022} dev@example.com")
+    }
+
+    func testProviderUsageSummaryMapsAuthRequiredState() {
+        let result = ProviderUsageResult(
+            provider: "claude",
+            installed: true,
+            authenticated: false,
+            account: nil,
+            authMethod: nil,
+            authError: nil,
+            planType: nil,
+            organization: nil,
+            state: "auth_required",
+            limitReached: nil,
+            resetAt: nil,
+            lastSeenAt: nil,
+            message: "Claude OAuth token not found.",
+            supportLevel: "best_effort",
+            supportsRemainingQuota: false,
+            scannedFiles: nil,
+            source: nil,
+            limits: nil,
+            credits: nil,
+            spendControl: nil
+        )
+
+        let summary = result.usageSummary(for: .claude)
+
+        XCTAssertEqual(summary.status, .actionRequired)
+        XCTAssertEqual(summary.statusMessage, "Sign in to fetch usage.")
+        XCTAssertTrue(summary.quotaWindows.isEmpty)
+        XCTAssertNil(summary.metadata)
+    }
+
+    func testClaudeUsageSummaryCorrectsLegacyOverScaledPercentages() {
+        let result = ProviderUsageResult(
+            provider: "claude",
+            installed: true,
+            authenticated: true,
+            account: "claude@example.com",
+            authMethod: "oauth",
+            authError: nil,
+            planType: "pro",
+            organization: nil,
+            state: "available",
+            limitReached: false,
+            resetAt: nil,
+            lastSeenAt: nil,
+            message: "Claude usage data was fetched successfully.",
+            supportLevel: "direct_api",
+            supportsRemainingQuota: true,
+            scannedFiles: nil,
+            source: "claude_oauth_usage_api",
+            limits: ProviderUsageLimits(
+                primary: UsageQuotaWindow(
+                    name: nil,
+                    limitId: nil,
+                    usedPercent: 5200,
+                    remainingPercent: 0,
+                    limitWindowSeconds: nil,
+                    resetAfterSeconds: nil,
+                    resetAt: nil
+                ),
+                secondary: UsageQuotaWindow(
+                    name: nil,
+                    limitId: nil,
+                    usedPercent: 3800,
+                    remainingPercent: 0,
+                    limitWindowSeconds: nil,
+                    resetAfterSeconds: nil,
+                    resetAt: nil
+                ),
+                codeReviewPrimary: nil,
+                codeReviewSecondary: nil,
+                additional: []
+            ),
+            credits: nil,
+            spendControl: nil
+        )
+
+        let summary = result.usageSummary(for: .claude)
+
+        XCTAssertEqual(summary.quotaWindows.count, 2)
+        XCTAssertEqual(summary.quotaWindows[0].label, "5h")
+        XCTAssertEqual(summary.quotaWindows[0].remaining, 48, accuracy: 0.1)
+        XCTAssertEqual(summary.quotaWindows[1].label, "7d")
+        XCTAssertEqual(summary.quotaWindows[1].remaining, 62, accuracy: 0.1)
     }
 }

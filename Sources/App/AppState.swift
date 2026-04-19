@@ -9,9 +9,11 @@ final class AppState: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
 
-    private let client = APIClient.shared
+    private let client: APIClient
 
-    init() {
+    init(client: APIClient = .shared) {
+        self.client = client
+
         if AppConfig.disableAuthentication {
             applyAuthBypassSession()
         }
@@ -33,10 +35,10 @@ final class AppState: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let user = try await client.request(API.me, responseType: User.self)
-            currentUser = user
+            let response = try await client.request(API.me, responseType: CurrentUserResponse.self)
+            currentUser = response.user.asAppUser()
             isAuthenticated = true
-            AppLogger.auth.info("Session restored for user: \(user.id)")
+            AppLogger.auth.info("Session restored for user: \(response.user.id)")
         } catch APIError.unauthorized {
             signOut()
         } catch {

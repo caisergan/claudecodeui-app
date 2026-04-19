@@ -16,6 +16,51 @@ struct User: Identifiable, Codable, Equatable {
     }
 }
 
+struct AuthenticatedUserPayload: Decodable, Equatable {
+    let id: String
+    let username: String
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        username = try container.decode(String.self, forKey: .username)
+
+        if let stringID = try? container.decode(String.self, forKey: .id) {
+            id = stringID
+        } else if let intID = try? container.decode(Int.self, forKey: .id) {
+            id = String(intID)
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: container,
+                debugDescription: "Expected id to decode as either a string or integer."
+            )
+        }
+    }
+
+    func asAppUser() -> User {
+        User(
+            id: id,
+            name: username,
+            email: username
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case username
+    }
+}
+
+struct AuthSessionResponse: Decodable {
+    let success: Bool
+    let token: String
+    let user: AuthenticatedUserPayload
+}
+
+struct CurrentUserResponse: Decodable {
+    let user: AuthenticatedUserPayload
+}
+
 // MARK: - Message
 
 struct Message: Identifiable, Codable, Equatable {

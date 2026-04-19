@@ -30,12 +30,11 @@ struct LoginView: View {
                         // MARK: - Form
                         VStack(spacing: 16) {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Email")
+                                Text("Username")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                TextField("you@example.com", text: $viewModel.email)
-                                    .textContentType(.emailAddress)
-                                    .keyboardType(.emailAddress)
+                                TextField("your-username", text: $viewModel.username)
+                                    .textContentType(.username)
                                     .autocorrectionDisabled()
                                     .textInputAutocapitalization(.never)
                                     .padding(14)
