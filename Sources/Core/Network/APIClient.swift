@@ -1,5 +1,51 @@
 import Foundation
 
+// MARK: - Auth Mode
+
+enum AuthMode {
+    /// Bearer token from Keychain (.authToken)
+    case jwt
+    /// External API key from Keychain (.agentAPIKey)
+    case apiKey
+    /// No auth header
+    case none
+}
+
+// MARK: - Endpoint
+
+struct Endpoint {
+    let path: String
+    let method: HTTPMethod
+    let body: Encodable?
+    let queryItems: [URLQueryItem]
+    let extraHeaders: [String: String]
+    let authMode: AuthMode
+
+    init(
+        path: String,
+        method: HTTPMethod = .get,
+        body: Encodable? = nil,
+        queryItems: [URLQueryItem] = [],
+        extraHeaders: [String: String] = [:],
+        authMode: AuthMode = .jwt
+    ) {
+        self.path = path
+        self.method = method
+        self.body = body
+        self.queryItems = queryItems
+        self.extraHeaders = extraHeaders
+        self.authMode = authMode
+    }
+}
+
+enum HTTPMethod: String {
+    case get = "GET"
+    case post = "POST"
+    case put = "PUT"
+    case patch = "PATCH"
+    case delete = "DELETE"
+}
+
 // MARK: - APIClient
 
 final class APIClient {
@@ -62,8 +108,22 @@ final class APIClient {
 
     // MARK: - Helpers
 
-    private func buildRequest(for endpoint: Endpoint) throws -> URLRequest {
-        guard let url = URL(string: endpoint.path, relativeTo: baseURL) else {
+    func buildRequest(for endpoint: Endpoint) throws -> URLRequest {
+        guard let baseComponents = URLComponents(url: baseURL, resolvingAgainstBaseURL: true) else {
+            throw APIError.invalidURL
+        }
+
+        // Combine base path with endpoint path
+        var components = baseComponents
+        let combinedPath = baseComponents.path.appending(endpoint.path)
+        components.path = combinedPath
+
+        // Query items
+        if !endpoint.queryItems.isEmpty {
+            components.queryItems = endpoint.queryItems
+        }
+
+        guard let url = components.url else {
             throw APIError.invalidURL
         }
 
@@ -71,9 +131,23 @@ final class APIClient {
         request.httpMethod = endpoint.method.rawValue
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Attach auth token if available
-        if let token = KeychainHelper.shared.read(key: .authToken) {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // Auth
+        switch endpoint.authMode {
+        case .jwt:
+            if let token = KeychainHelper.shared.read(key: .authToken) {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+        case .apiKey:
+            if let key = KeychainHelper.shared.read(key: .agentAPIKey) {
+                request.setValue(key, forHTTPHeaderField: "x-api-key")
+            }
+        case .none:
+            break
+        }
+
+        // Extra headers
+        for (field, value) in endpoint.extraHeaders {
+            request.setValue(value, forHTTPHeaderField: field)
         }
 
         if let body = endpoint.body {
@@ -82,26 +156,4 @@ final class APIClient {
 
         return request
     }
-}
-
-// MARK: - Endpoint
-
-struct Endpoint {
-    let path: String
-    let method: HTTPMethod
-    let body: Encodable?
-
-    init(path: String, method: HTTPMethod = .get, body: Encodable? = nil) {
-        self.path = path
-        self.method = method
-        self.body = body
-    }
-}
-
-enum HTTPMethod: String {
-    case get = "GET"
-    case post = "POST"
-    case put = "PUT"
-    case patch = "PATCH"
-    case delete = "DELETE"
 }

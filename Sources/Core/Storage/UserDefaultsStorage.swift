@@ -47,4 +47,55 @@ final class UserDefaultsStorage {
         preferredLanguage = "en"
         notificationsEnabled = true
     }
+
+    // MARK: - Provider Preferences
+
+    private let providerPreferencesKey = "providerPreferences"
+    private let warmupSessionIdsKey = "warmupSessionIds"
+
+    var providerPreferences: [String: ProviderPreference] {
+        get {
+            guard let data = store.data(forKey: providerPreferencesKey),
+                  let decoded = try? JSONDecoder().decode([String: ProviderPreference].self, from: data) else {
+                return [:]
+            }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                store.set(data, forKey: providerPreferencesKey)
+            }
+        }
+    }
+
+    var warmupSessionIds: [String: String] {
+        get {
+            store.dictionary(forKey: warmupSessionIdsKey) as? [String: String] ?? [:]
+        }
+        set {
+            store.set(newValue, forKey: warmupSessionIdsKey)
+        }
+    }
+
+    func preference(for provider: AIProvider) -> ProviderPreference {
+        providerPreferences[provider.rawValue] ?? .default
+    }
+
+    func setPreference(_ pref: ProviderPreference, for provider: AIProvider) {
+        var all = providerPreferences
+        all[provider.rawValue] = pref
+        providerPreferences = all
+    }
+
+    func warmupSessionId(for provider: AIProvider) -> String? {
+        warmupSessionIds[provider.rawValue]
+    }
+
+    func setWarmupSessionId(_ sessionId: String, for provider: AIProvider) {
+        var all = warmupSessionIds
+        all[provider.rawValue] = sessionId
+        warmupSessionIds = all
+    }
+
+    private var store: UserDefaults { .standard }
 }

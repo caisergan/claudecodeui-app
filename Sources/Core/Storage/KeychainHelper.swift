@@ -7,6 +7,7 @@ enum KeychainKey: String {
     case authToken = "com.claudecodeui.authToken"
     case refreshToken = "com.claudecodeui.refreshToken"
     case userId = "com.claudecodeui.userId"
+    case agentAPIKey = "com.claudecodeui.agentAPIKey"
 }
 
 // MARK: - KeychainHelper
