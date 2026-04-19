@@ -20,6 +20,16 @@ final class ChatViewModel: ObservableObject {
         messages.append(userMessage)
         inputText = ""
 
+        if AppConfig.disableAuthentication {
+            messages.append(
+                Message(
+                    role: .assistant,
+                    content: "Preview mode is active. Connect app auth to send live messages."
+                )
+            )
+            return
+        }
+
         isSending = true
         defer { isSending = false }
 
