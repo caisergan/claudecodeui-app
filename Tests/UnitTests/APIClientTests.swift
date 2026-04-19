@@ -7,7 +7,7 @@ final class APIClientTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        baseURL = URL(string: "https://mock.test/api/v1")!
+        baseURL = URL(string: "https://mock.test/api")!
     }
 
     override func tearDown() {
@@ -137,5 +137,90 @@ final class APIClientTests: XCTestCase {
         )
 
         XCTAssertEqual(capturedMethod, "POST")
+    }
+
+    // MARK: - Query items are encoded
+
+    func testQueryItemsAreEncodedInURL() throws {
+        let client = APIClient(baseURL: baseURL, session: .shared)
+        let endpoint = API.usageLimits(provider: "claude", refresh: true)
+        let request = try client.buildRequest(for: endpoint)
+
+        let url = request.url!.absoluteString
+        XCTAssertTrue(url.contains("provider=claude"), "URL should contain provider query: \(url)")
+        XCTAssertTrue(url.contains("refresh=true"), "URL should contain refresh query: \(url)")
+    }
+
+    // MARK: - CLI status path
+
+    func testCLIStatusEndpointPath() throws {
+        let client = APIClient(baseURL: baseURL, session: .shared)
+        let endpoint = API.cliStatus(provider: "gemini")
+        let request = try client.buildRequest(for: endpoint)
+
+        let url = request.url!.absoluteString
+        XCTAssertTrue(url.contains("/cli/gemini/status"), "URL should contain CLI status path: \(url)")
+    }
+
+    // MARK: - Agent endpoint uses apiKey auth mode
+
+    func testAgentEndpointUsesAPIKeyAuth() throws {
+        let payload = WarmupRequestPayload(provider: .claude, projectPath: "/tmp/test")
+        let endpoint = API.agent(body: payload)
+
+        // Verify auth mode is apiKey (not jwt)
+        switch endpoint.authMode {
+        case .apiKey:
+            break // expected
+        default:
+            XCTFail("Agent endpoint should use .apiKey auth mode")
+        }
+    }
+
+    // MARK: - Agent request body shape
+
+    func testAgentRequestBodyContainsExpectedFields() throws {
+        let payload = WarmupRequestPayload(
+            provider: .cursor,
+            model: "gpt-4",
+            sessionId: "sess-123",
+            projectPath: "/projects/test"
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(payload)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        XCTAssertEqual(json["message"] as? String, "ping")
+        XCTAssertEqual(json["provider"] as? String, "cursor")
+        XCTAssertEqual(json["model"] as? String, "gpt-4")
+        XCTAssertEqual(json["session_id"] as? String, "sess-123")
+        XCTAssertEqual(json["project_path"] as? String, "/projects/test")
+        XCTAssertEqual(json["stream"] as? Bool, false)
+    }
+
+    // MARK: - No auth header for .none mode
+
+    func testNoAuthHeaderForNoneMode() throws {
+        let client = APIClient(baseURL: baseURL, session: .shared)
+        let endpoint = Endpoint(path: "/public", authMode: .none)
+        let request = try client.buildRequest(for: endpoint)
+
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
+    }
+
+    // MARK: - Extra headers are applied
+
+    func testExtraHeadersAreApplied() throws {
+        let client = APIClient(baseURL: baseURL, session: .shared)
+        let endpoint = Endpoint(
+            path: "/test",
+            extraHeaders: ["X-Custom": "hello"]
+        )
+        let request = try client.buildRequest(for: endpoint)
+
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Custom"), "hello")
     }
 }

@@ -59,4 +59,26 @@ enum API {
     static func updateProfile(name: String) -> Endpoint {
         Endpoint(path: "/users/me", method: .patch, body: ["name": name])
     }
+
+    // MARK: Usage & Readiness
+    static func usageLimits(provider: String? = nil, refresh: Bool = false) -> Endpoint {
+        var items: [URLQueryItem] = []
+        if let provider { items.append(.init(name: "provider", value: provider)) }
+        if refresh { items.append(.init(name: "refresh", value: "true")) }
+        return Endpoint(path: "/usage-limits", queryItems: items)
+    }
+
+    static func cliStatus(provider: String) -> Endpoint {
+        Endpoint(path: "/cli/\(provider)/status")
+    }
+
+    // MARK: Agent (external API key auth)
+    static func agent(body: WarmupRequestPayload) -> Endpoint {
+        Endpoint(
+            path: "/agent",
+            method: .post,
+            body: body,
+            authMode: .apiKey
+        )
+    }
 }
