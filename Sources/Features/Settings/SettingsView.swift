@@ -77,7 +77,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .navigationTitle("Settings")
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .task {
                 viewModel.loadProviderSettings()
             }
@@ -119,7 +120,7 @@ private struct ProviderRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 20) {
             Toggle(provider.displayName, isOn: Binding(
                 get: { preference.isEnabled },
                 set: { onToggle($0) }
@@ -131,6 +132,7 @@ private struct ProviderRow: View {
                         Text("Model")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                        Spacer()
                         TextField(
                             "Default",
                             text: Binding(
@@ -139,23 +141,33 @@ private struct ProviderRow: View {
                             )
                         )
                         .font(.subheadline)
+                        .multilineTextAlignment(.trailing)
                         .textFieldStyle(.roundedBorder)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .frame(maxWidth: 180)
                     }
                 } else {
-                    Picker("Model", selection: modelSelection) {
-                        Text("Default").tag("")
-                        ForEach(menuOptions, id: \.self) { model in
-                            Text(modelRowTitle(for: model))
-                                .tag(model)
+                    HStack {
+                        Text("Model")
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Picker("", selection: modelSelection) {
+                            Text("Default").tag("")
+                            ForEach(menuOptions, id: \.self) { model in
+                                Text(modelRowTitle(for: model))
+                                    .tag(model)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 200, alignment: .trailing)
                     }
-                    .pickerStyle(.menu)
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
     }
 
     private func modelRowTitle(for model: String) -> String {

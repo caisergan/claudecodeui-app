@@ -173,6 +173,162 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.errorMessage, "Codex warmup failed: \(message)")
     }
 
+    func testUsageProvidersExcludeClaudeAndRefreshRequestsOnlyNonClaudeProviders() async throws {
+        var requestedProviders: [String] = []
+
+        let session = makeMockSession { request in
+            switch request.url?.path {
+            case "/api/usage-limits":
+                let components = try XCTUnwrap(
+                    URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
+                )
+                let provider = try XCTUnwrap(
+                    components.queryItems?.first(where: { $0.name == "provider" })?.value
+                )
+                requestedProviders.append(provider)
+
+                return try Self.jsonResponse(
+                    [
+                        "success": true,
+                        "checked_at": "2026-04-20T00:00:00Z",
+                        "providers": [
+                            provider: [
+                                "provider": provider,
+                                "installed": true,
+                                "authenticated": true,
+                                "state": provider == "codex" ? "available" : "unsupported",
+                                "message": provider == "codex"
+                                    ? "Codex usage data was fetched successfully."
+                                    : "\(provider.capitalized) usage detection is not supported yet.",
+                                "limits": provider == "codex"
+                                    ? [
+                                        "primary": [
+                                            "remaining_percent": 80,
+                                            "limit_window_seconds": 18_000,
+                                        ],
+                                    ]
+                                    : [:],
+                            ],
+                        ],
+                    ],
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = makeViewModel(session: session)
+        viewModel.loadProviderSettings()
+
+        XCTAssertEqual(viewModel.usageProviders, [.codex, .cursor, .gemini])
+
+        await viewModel.refreshUsage(forceRefresh: true)
+
+        XCTAssertEqual(requestedProviders, ["codex", "cursor", "gemini"])
+        XCTAssertEqual(viewModel.usageSummaries.map(\.provider), [.codex, .cursor, .gemini])
+    }
+
+    func testRefreshUsageUsesLiveEndpointWhenAvailableInPreviewMode() async throws {
+        guard AppConfig.disableAuthentication else {
+            throw XCTSkip("Preview-mode assertions only apply when auth bypass is enabled.")
+        }
+
+        var requestedPaths: [String] = []
+        let session = makeMockSession { request in
+            requestedPaths.append(request.url?.path ?? "")
+
+            switch request.url?.path {
+            case "/api/usage-limits":
+                return try Self.jsonResponse(
+                    [
+                        "success": true,
+                        "checked_at": "2026-04-19T00:00:00Z",
+                        "providers": [
+                            "codex": [
+                                "provider": "codex",
+                                "installed": true,
+                                "authenticated": true,
+                                "account": "dev@example.com",
+                                "plan_type": "ChatGPT Plus",
+                                "state": "available",
+                                "limit_reached": false,
+                                "reset_at": "2030-04-19T05:00:00Z",
+                                "supports_remaining_quota": true,
+                                "limits": [
+                                    "primary": [
+                                        "remaining_percent": 80,
+                                        "limit_window_seconds": 18_000,
+                                    ],
+                                    "secondary": [
+                                        "remaining_percent": 45,
+                                        "limit_window_seconds": 604_800,
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = makeViewModel(session: session)
+        viewModel.loadProviderSettings()
+
+        await viewModel.refreshUsage()
+
+        XCTAssertEqual(requestedPaths, ["/api/usage-limits"])
+
+        let codexSummary = try XCTUnwrap(
+            viewModel.usageSummaries.first(where: { $0.provider == .codex })
+        )
+        XCTAssertEqual(codexSummary.status, .ready)
+        XCTAssertEqual(codexSummary.quotaWindows.count, 2)
+        XCTAssertEqual(codexSummary.quotaWindows[0].label, "5h")
+        XCTAssertEqual(codexSummary.quotaWindows[0].remaining, 80)
+        XCTAssertEqual(codexSummary.quotaWindows[1].label, "7d")
+        XCTAssertEqual(codexSummary.quotaWindows[1].remaining, 45)
+        XCTAssertTrue(codexSummary.metadata?.contains("ChatGPT Plus") == true)
+        XCTAssertTrue(codexSummary.metadata?.contains("dev@example.com") == true)
+        XCTAssertFalse(viewModel.showError)
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    func testRefreshUsageFallsBackToPreviewWhenLiveRequestFailsInPreviewMode() async throws {
+        guard AppConfig.disableAuthentication else {
+            throw XCTSkip("Preview-mode assertions only apply when auth bypass is enabled.")
+        }
+
+        let session = makeMockSession { request in
+            switch request.url?.path {
+            case "/api/usage-limits":
+                throw URLError(.cannotConnectToHost)
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = makeViewModel(session: session)
+        viewModel.loadProviderSettings()
+
+        await viewModel.refreshUsage()
+
+        let claudeSummary = try XCTUnwrap(
+            viewModel.usageSummaries.first(where: { $0.provider == .claude })
+        )
+        XCTAssertEqual(claudeSummary.status, .preview)
+        XCTAssertEqual(claudeSummary.statusMessage, "Preview mode active")
+        XCTAssertTrue(claudeSummary.quotaWindows.isEmpty)
+        XCTAssertFalse(viewModel.showError)
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
     private func makeViewModel(session: URLSession) -> HomeViewModel {
         HomeViewModel(
             client: APIClient(baseURL: URL(string: "https://mock.test/api")!, session: session),

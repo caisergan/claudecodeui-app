@@ -42,6 +42,10 @@ final class HomeViewModel: ObservableObject {
         AIProvider.allCases.filter { preferences[$0]?.isEnabled ?? true }
     }
 
+    var usageProviders: [AIProvider] {
+        enabledProviders.filter { $0 != .claude }
+    }
+
     init(
         client: APIClient = .shared,
         serverClient: APIClient = APIClient(baseURL: AppConfig.serverBaseURL),
@@ -98,43 +102,53 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    func refreshUsage() async {
-        if AppConfig.disableAuthentication {
-            loadPreviewUsage()
-            return
-        }
-
+    func refreshUsage(forceRefresh: Bool = false) async {
         isLoadingUsage = true
         errorMessage = nil
         showError = false
         defer { isLoadingUsage = false }
 
+        let providers = usageProviders
+        guard providers.isNotEmpty else {
+            usageSummaries = []
+            return
+        }
+
         do {
-            let response = try await client.request(
-                API.usageLimits(),
-                responseType: UsageLimitsResponse.self
-            )
-            var summaries: [ProviderUsageSummary] = []
-            for provider in enabledProviders {
+            var resultsByProvider: [AIProvider: ProviderUsageResult] = [:]
+
+            for provider in providers {
+                let response = try await client.request(
+                    API.usageLimits(provider: provider.rawValue, refresh: forceRefresh),
+                    responseType: UsageLimitsResponse.self
+                )
+
                 if let result = response.providers[provider.rawValue] {
-                    let summary = result.message ?? result.state ?? "Available"
-                    summaries.append(ProviderUsageSummary(
-                        provider: provider,
-                        summary: summary,
-                        resetTime: result.resetAt,
-                        state: result.state
-                    ))
-                } else {
-                    summaries.append(ProviderUsageSummary(
-                        provider: provider,
-                        summary: "Unavailable",
-                        resetTime: nil,
-                        state: nil
-                    ))
+                    resultsByProvider[provider] = result
                 }
             }
-            usageSummaries = summaries
+
+            usageSummaries = providers.map { provider in
+                if let result = resultsByProvider[provider] {
+                    return result.usageSummary(for: provider)
+                }
+
+                return ProviderUsageSummary(
+                    provider: provider,
+                    status: .unknown,
+                    state: nil,
+                    quotaWindows: [],
+                    statusMessage: "No usage data available",
+                    metadata: nil,
+                    resetTime: nil
+                )
+            }
         } catch {
+            if AppConfig.disableAuthentication {
+                loadPreviewUsage()
+                return
+            }
+
             errorMessage = "Failed to load usage: \(error.localizedDescription)"
             showError = true
         }
@@ -261,12 +275,15 @@ final class HomeViewModel: ObservableObject {
     private func loadPreviewUsage() {
         errorMessage = nil
         showError = false
-        usageSummaries = enabledProviders.map { provider in
+        usageSummaries = usageProviders.map { provider in
             ProviderUsageSummary(
                 provider: provider,
-                summary: "Preview mode is active.",
-                resetTime: nil,
-                state: "preview"
+                status: .preview,
+                state: "preview",
+                quotaWindows: [],
+                statusMessage: "Preview mode active",
+                metadata: nil,
+                resetTime: nil
             )
         }
     }

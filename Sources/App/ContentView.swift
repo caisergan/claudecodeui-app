@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
+    @AppStorage("colorSchemePreference") private var colorSchemePreference: ColorSchemePreference = .system
 
     var body: some View {
         ZStack {
@@ -17,6 +18,7 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .preferredColorScheme(colorSchemePreference.colorScheme)
         // Animate the auth ↔ main transition
         .animation(.easeInOut(duration: 0.3), value: appState.isAuthenticated)
         .task {
