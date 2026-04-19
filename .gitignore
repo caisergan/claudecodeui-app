@@ -12,6 +12,7 @@ DerivedData/
 !default.mode2v3
 *.perspectivev3
 !default.perspectivev3
+ClaudeCodeUI.xcodeproj/
 
 # ── Swift Package Manager ───────────────────────────────────────────────────
 .build/
@@ -52,3 +53,4 @@ AuthKey_*.p8
 *~
 
 .omx/
+.worktrees/
