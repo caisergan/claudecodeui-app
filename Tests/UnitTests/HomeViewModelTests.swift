@@ -13,12 +13,16 @@ final class HomeViewModelTests: XCTestCase {
         testDefaults = UserDefaults(suiteName: suiteName)
         testDefaults.removePersistentDomain(forName: suiteName)
         storage = UserDefaultsStorage(store: testDefaults)
+        UserDefaultsStorage.shared.warmupProjectPathOverride = nil
+        UserDefaultsStorage.shared.apiBaseURLOverride = nil
         KeychainHelper.shared.save("test-agent-key", key: .agentAPIKey)
         MockURLProtocol.requestHandler = nil
     }
 
     override func tearDown() {
         testDefaults.removePersistentDomain(forName: suiteName)
+        UserDefaultsStorage.shared.warmupProjectPathOverride = nil
+        UserDefaultsStorage.shared.apiBaseURLOverride = nil
         KeychainHelper.shared.delete(key: .agentAPIKey)
         MockURLProtocol.requestHandler = nil
         super.tearDown()
@@ -203,10 +207,45 @@ final class HomeViewModelTests: XCTestCase {
             message,
             """
             Warmup could not resolve the server project path automatically. \
-            Set warmup_project_path in .env or ensure /health returns appInstallPath.
+            Set a Warmup Project Path in Settings, set warmup_project_path in .env, \
+            or ensure /health returns appInstallPath.
             """
         )
         XCTAssertEqual(viewModel.errorMessage, "Codex warmup failed: \(message)")
+    }
+
+    func testWarmupUsesSavedProjectPathWithoutHealthRequest() async throws {
+        UserDefaultsStorage.shared.warmupProjectPathOverride = "/tmp/manual-project"
+
+        var requestedPaths: [String] = []
+        var capturedBody: [String: Any]?
+        let session = makeMockSession { request in
+            requestedPaths.append(request.url?.path ?? "")
+
+            switch request.url?.path {
+            case "/api/agent":
+                capturedBody = try Self.jsonBody(from: request)
+                return try Self.jsonResponse(
+                    ["success": true, "sessionId": "codex-session-1"],
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = HomeViewModel(
+            client: APIClient(baseURL: URL(string: "https://mock.test/api")!, session: session),
+            serverClient: APIClient(baseURL: URL(string: "https://mock.test")!, session: session),
+            storage: UserDefaultsStorage.shared
+        )
+
+        await viewModel.warmupProvider(.codex)
+
+        XCTAssertEqual(requestedPaths, ["/api/agent"])
+        XCTAssertEqual(capturedBody?["projectPath"] as? String, "/tmp/manual-project")
+        XCTAssertEqual(viewModel.warmupStates[.codex], .success)
     }
 
     func testLoadProviderSettingsRestoresStoredLastSuccessfulWarmupDate() {
@@ -303,6 +342,121 @@ final class HomeViewModelTests: XCTestCase {
 
         XCTAssertEqual(requestedProviders, ["codex", "cursor", "gemini"])
         XCTAssertEqual(viewModel.usageSummaries.map(\.provider), [.codex, .cursor, .gemini])
+    }
+
+    func testRefreshUsagePersistsUsageSnapshotAndSyncTime() async throws {
+        let session = makeMockSession { request in
+            switch request.url?.path {
+            case "/api/usage-limits":
+                let components = try XCTUnwrap(
+                    URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
+                )
+                let provider = try XCTUnwrap(
+                    components.queryItems?.first(where: { $0.name == "provider" })?.value
+                )
+
+                return try Self.jsonResponse(
+                    [
+                        "success": true,
+                        "checked_at": "2026-04-20T00:00:00Z",
+                        "providers": [
+                            provider: [
+                                "provider": provider,
+                                "installed": true,
+                                "authenticated": true,
+                                "state": "available",
+                                "message": "\(provider.capitalized) usage data was fetched successfully.",
+                                "limits": [
+                                    "primary": [
+                                        "remaining_percent": 80,
+                                        "limit_window_seconds": 18_000,
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = makeViewModel(session: session)
+        viewModel.loadProviderSettings()
+
+        await viewModel.refreshUsage(forceRefresh: true)
+
+        let snapshot = try XCTUnwrap(storage.usageCacheSnapshot)
+        XCTAssertEqual(snapshot.baseURL, "https://mock.test/api")
+        XCTAssertEqual(snapshot.summaries.map(\.provider), [.codex, .cursor, .gemini])
+        XCTAssertEqual(viewModel.usageSummaries, snapshot.summaries)
+        XCTAssertEqual(viewModel.lastUsageSyncDate, snapshot.syncedAt)
+    }
+
+    func testLoadCachedUsageRestoresSnapshotForMatchingBaseURL() {
+        let syncedAt = Date(timeIntervalSince1970: 1_713_571_200)
+        storage.usageCacheSnapshot = UsageCacheSnapshot(
+            baseURL: "https://mock.test/api",
+            syncedAt: syncedAt,
+            summaries: [
+                ProviderUsageSummary(
+                    provider: .codex,
+                    status: .ready,
+                    state: "available",
+                    quotaWindows: [QuotaWindowDisplay(label: "5h", remaining: 80)],
+                    statusMessage: nil,
+                    metadata: "ChatGPT Plus",
+                    resetTime: nil
+                )
+            ]
+        )
+
+        let session = makeMockSession { request in
+            XCTFail("No request expected: \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let viewModel = makeViewModel(session: session)
+        viewModel.loadProviderSettings()
+        viewModel.loadCachedUsage()
+
+        XCTAssertEqual(viewModel.usageSummaries.count, 1)
+        XCTAssertEqual(viewModel.usageSummaries.first?.provider, .codex)
+        XCTAssertEqual(viewModel.lastUsageSyncDate, syncedAt)
+    }
+
+    func testRefreshUsageMarksUnsupportedWhenUsageEndpointReturnsHTML() async {
+        let session = makeMockSession { request in
+            switch request.url?.path {
+            case "/api/usage-limits":
+                let html = Data("<!doctype html><html><body>App shell</body></html>".utf8)
+                let response = HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "text/html; charset=UTF-8"]
+                )!
+                return (response, html)
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = makeViewModel(session: session)
+        viewModel.loadProviderSettings()
+
+        await viewModel.refreshUsage()
+
+        XCTAssertEqual(viewModel.usageSummaries.map(\.provider), [.codex, .cursor, .gemini])
+        XCTAssertTrue(viewModel.usageSummaries.allSatisfy { $0.status == .unsupported })
+        XCTAssertTrue(
+            viewModel.usageSummaries.allSatisfy { $0.statusMessage == "Usage endpoint is unavailable on this server" }
+        )
+        XCTAssertFalse(viewModel.showError)
+        XCTAssertNil(viewModel.errorMessage)
     }
 
     func testRefreshUsageUsesLiveEndpointWhenAvailableInPreviewMode() async throws {

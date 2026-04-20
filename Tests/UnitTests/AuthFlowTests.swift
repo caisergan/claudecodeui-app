@@ -79,6 +79,18 @@ final class AuthFlowTests: XCTestCase {
         XCTAssertEqual(appState.currentUser, User(id: "11", name: "dev-user", email: "dev-user"))
     }
 
+    func testRestoreSessionWithoutTokenClearsAuthenticatedState() async {
+        let client = APIClient(baseURL: URL(string: "https://mock.test/api")!, session: .shared)
+        let appState = AppState(client: client)
+        appState.isAuthenticated = true
+        appState.currentUser = User(id: "preview", name: "Preview", email: "preview@test.com")
+
+        await appState.restoreSession()
+
+        XCTAssertFalse(appState.isAuthenticated)
+        XCTAssertNil(appState.currentUser)
+    }
+
     private func makeMockSession(
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> URLSession {

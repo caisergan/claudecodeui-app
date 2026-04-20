@@ -90,6 +90,37 @@ final class APIClientTests: XCTestCase {
         }
     }
 
+    func testRequestThrowsCompatibilityErrorWhenHTMLIsReturnedFromAPIEndpoint() async {
+        MockURLProtocol.requestHandler = { request in
+            let html = Data("<!doctype html><html><body>App shell</body></html>".utf8)
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/html; charset=UTF-8"]
+            )!
+            return (response, html)
+        }
+
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config)
+        let client = APIClient(baseURL: baseURL, session: session)
+
+        do {
+            _ = try await client.request(
+                Endpoint(path: "/usage-limits"),
+                responseType: UsageLimitsResponse.self
+            )
+            XCTFail("Expected APIError.serverError")
+        } catch APIError.serverError(let message) {
+            XCTAssertTrue(message.contains("/usage-limits"))
+            XCTAssertTrue(message.contains("received HTML"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     // MARK: - Encode array response
 
     func testRequestDecodesArraySuccessfully() async throws {
@@ -162,13 +193,25 @@ final class APIClientTests: XCTestCase {
         }
     }
 
-    func testAPIKeyRequestsPreferEnvKeyOverKeychainValue() throws {
+    func testAPIKeyRequestsPreferSettingsKeyOverEnvValue() throws {
         let resolved = AppConfig.preferredAgentAPIKey(
             envValue: "env-key",
             keychainValue: "keychain-key"
         )
 
-        XCTAssertEqual(resolved, "env-key")
+        XCTAssertEqual(resolved, "keychain-key")
+    }
+
+    func testBuildRequestUsesLatestBaseURLFromProvider() throws {
+        var currentBaseURL = URL(string: "https://initial.test/api")!
+        let client = APIClient(baseURLProvider: { currentBaseURL }, session: .shared)
+
+        var request = try client.buildRequest(for: Endpoint(path: "/health", authMode: .none))
+        XCTAssertEqual(request.url?.absoluteString, "https://initial.test/api/health")
+
+        currentBaseURL = URL(string: "https://updated.test/api")!
+        request = try client.buildRequest(for: Endpoint(path: "/health", authMode: .none))
+        XCTAssertEqual(request.url?.absoluteString, "https://updated.test/api/health")
     }
 
     func testAPIKey401ReturnsServerErrorMessage() async {

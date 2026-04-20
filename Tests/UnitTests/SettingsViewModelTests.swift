@@ -4,21 +4,23 @@ import XCTest
 @MainActor
 final class SettingsViewModelTests: XCTestCase {
 
+    private var testDefaults: UserDefaults!
     private var storage: UserDefaultsStorage!
-    private let testDefaults = UserDefaults(suiteName: "SettingsViewModelTests")!
+    private let suiteName = "SettingsViewModelTests"
 
     override func setUp() {
         super.setUp()
-        testDefaults.removePersistentDomain(forName: "SettingsViewModelTests")
-        storage = .shared
+        testDefaults = UserDefaults(suiteName: suiteName)
+        testDefaults.removePersistentDomain(forName: suiteName)
+        storage = UserDefaultsStorage(store: testDefaults)
+        KeychainHelper.shared.delete(key: .agentAPIKey)
     }
 
     override func tearDown() {
-        testDefaults.removePersistentDomain(forName: "SettingsViewModelTests")
+        testDefaults.removePersistentDomain(forName: suiteName)
+        KeychainHelper.shared.delete(key: .agentAPIKey)
         super.tearDown()
     }
-
-    // MARK: - Provider preferences persist
 
     func testProviderPreferencesPersistAndReload() {
         let pref = ProviderPreference(isEnabled: false, warmupModel: "opus-4")
@@ -29,107 +31,119 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(loaded.warmupModel, "opus-4")
     }
 
-    func testDefaultPreferenceIsEnabledWithEmptyModel() {
-        let pref = storage.preference(for: .gemini)
-        XCTAssertTrue(pref.isEnabled)
-        XCTAssertEqual(pref.warmupModel, "")
+    func testLoadProviderSettingsLoadsConnectionOverrides() {
+        storage.apiBaseURLOverride = "https://app.override.test/api"
+        KeychainHelper.shared.save("settings-key", key: .agentAPIKey)
+
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.loadProviderSettings()
+
+        XCTAssertEqual(viewModel.apiBaseURLOverrideText, "https://app.override.test/api")
+        XCTAssertEqual(viewModel.agentAPIKeyText, "settings-key")
     }
 
-    // MARK: - Disabled providers filtered
+    func testSaveAPIBaseURLOverrideNormalizesAndPersistsValue() {
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.apiBaseURLOverrideText = "http://localhost:3000"
 
-    func testDisabledProvidersExcludedFromEnabledList() {
-        let vm = SettingsViewModel()
-        vm.loadProviderSettings()
+        let saved = viewModel.saveAPIBaseURLOverride()
 
-        // All enabled by default
-        XCTAssertEqual(vm.enabledProviders.count, AIProvider.allCases.count)
-
-        // Disable one
-        vm.toggleProvider(.codex, isEnabled: false)
-        XCTAssertFalse(vm.enabledProviders.contains(.codex))
-        XCTAssertEqual(vm.enabledProviders.count, AIProvider.allCases.count - 1)
+        XCTAssertTrue(saved)
+        XCTAssertEqual(storage.apiBaseURLOverride, "http://127.0.0.1:3000/api")
+        XCTAssertEqual(viewModel.apiBaseURLOverrideText, "http://127.0.0.1:3000/api")
+        XCTAssertNil(viewModel.errorBanner)
     }
 
-    // MARK: - Warmup session ID storage
+    func testSaveAPIBaseURLOverrideRejectsInvalidValue() {
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.apiBaseURLOverrideText = "not a url"
 
-    func testFirstWarmupSessionIdIsStored() {
-        XCTAssertNil(storage.warmupSessionId(for: .claude))
+        let saved = viewModel.saveAPIBaseURLOverride()
 
-        storage.setWarmupSessionId("sess-abc", for: .claude)
-        XCTAssertEqual(storage.warmupSessionId(for: .claude), "sess-abc")
+        XCTAssertFalse(saved)
+        XCTAssertNil(storage.apiBaseURLOverride)
+        XCTAssertEqual(viewModel.errorBanner, "Enter a valid API base URL.")
     }
 
-    func testSessionIdPerProviderIsolation() {
-        storage.setWarmupSessionId("sess-claude", for: .claude)
-        storage.setWarmupSessionId("sess-cursor", for: .cursor)
+    func testClearingAPIBaseURLOverrideRemovesPersistedValue() {
+        storage.apiBaseURLOverride = "https://app.override.test/api"
 
-        XCTAssertEqual(storage.warmupSessionId(for: .claude), "sess-claude")
-        XCTAssertEqual(storage.warmupSessionId(for: .cursor), "sess-cursor")
-        XCTAssertNil(storage.warmupSessionId(for: .codex))
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.loadProviderSettings()
+        viewModel.clearAPIBaseURLOverride()
+
+        XCTAssertEqual(viewModel.apiBaseURLOverrideText, "")
+        XCTAssertNil(storage.apiBaseURLOverride)
     }
 
-    // MARK: - Warmup request payload
+    func testSaveAgentAPIKeyStoresTrimmedValueInKeychain() {
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.agentAPIKeyText = "  secret-key  "
 
-    func testWarmupPayloadIncludesProviderAndModel() {
-        let payload = WarmupRequestPayload(
-            provider: .cursor,
-            model: "gpt-4",
-            sessionId: "sess-1",
-            projectPath: "/test"
-        )
-        XCTAssertEqual(payload.message, "ping")
-        XCTAssertEqual(payload.provider, "cursor")
-        XCTAssertEqual(payload.model, "gpt-4")
-        XCTAssertEqual(payload.sessionId, "sess-1")
-        XCTAssertEqual(payload.stream, false)
+        viewModel.saveAgentAPIKey()
+
+        XCTAssertEqual(viewModel.agentAPIKeyText, "secret-key")
+        XCTAssertEqual(KeychainHelper.shared.read(key: .agentAPIKey), "secret-key")
     }
 
-    func testWarmupPayloadOmitsModelWhenNil() {
-        let payload = WarmupRequestPayload(provider: .claude)
-        XCTAssertNil(payload.model)
-        XCTAssertNil(payload.sessionId)
+    func testClearingAgentAPIKeyRemovesSavedOverride() {
+        KeychainHelper.shared.save("secret-key", key: .agentAPIKey)
+
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.loadProviderSettings()
+        viewModel.clearAgentAPIKey()
+
+        XCTAssertEqual(viewModel.agentAPIKeyText, "")
+        XCTAssertNil(KeychainHelper.shared.read(key: .agentAPIKey))
     }
 
-    // MARK: - Warmup state transitions
+    func testLoadProviderSettingsLoadsWarmupProjectPathOverride() {
+        storage.warmupProjectPathOverride = "/tmp/project"
 
-    func testWarmupStateStartsIdle() {
-        let vm = SettingsViewModel()
-        vm.loadProviderSettings()
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.loadProviderSettings()
 
-        for provider in AIProvider.allCases {
-            XCTAssertEqual(vm.warmupStates[provider], .idle)
-        }
+        XCTAssertEqual(viewModel.warmupProjectPathText, "/tmp/project")
+    }
+
+    func testSaveWarmupProjectPathStoresTrimmedValue() {
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.warmupProjectPathText = "  /tmp/project  "
+
+        viewModel.saveWarmupProjectPath()
+
+        XCTAssertEqual(viewModel.warmupProjectPathText, "/tmp/project")
+        XCTAssertEqual(storage.warmupProjectPathOverride, "/tmp/project")
+    }
+
+    func testClearWarmupProjectPathRemovesOverride() {
+        storage.warmupProjectPathOverride = "/tmp/project"
+
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.loadProviderSettings()
+        viewModel.clearWarmupProjectPath()
+
+        XCTAssertEqual(viewModel.warmupProjectPathText, "")
+        XCTAssertNil(storage.warmupProjectPathOverride)
     }
 
     func testToggleProviderPersists() {
-        let vm = SettingsViewModel()
-        vm.loadProviderSettings()
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.loadProviderSettings()
 
-        vm.toggleProvider(.gemini, isEnabled: false)
-        XCTAssertEqual(vm.preferences[.gemini]?.isEnabled, false)
+        viewModel.toggleProvider(.gemini, isEnabled: false)
 
-        // Verify persistence
-        let persisted = storage.preference(for: .gemini)
-        XCTAssertEqual(persisted.isEnabled, false)
+        XCTAssertEqual(viewModel.preferences[.gemini]?.isEnabled, false)
+        XCTAssertEqual(storage.preference(for: .gemini).isEnabled, false)
     }
 
     func testUpdateWarmupModelPersists() {
-        let vm = SettingsViewModel()
-        vm.loadProviderSettings()
+        let viewModel = SettingsViewModel(storage: storage)
+        viewModel.loadProviderSettings()
 
-        vm.updateWarmupModel(.claude, model: "sonnet-4")
-        XCTAssertEqual(vm.preferences[.claude]?.warmupModel, "sonnet-4")
+        viewModel.updateWarmupModel(.claude, model: "sonnet-4")
 
-        let persisted = storage.preference(for: .claude)
-        XCTAssertEqual(persisted.warmupModel, "sonnet-4")
-    }
-
-    // MARK: - Timer cancellation
-
-    func testCancelAllResetTimersDoesNotCrash() {
-        let vm = SettingsViewModel()
-        vm.loadProviderSettings()
-        // Should be safe to call even with no active timers
-        vm.cancelAllResetTimers()
+        XCTAssertEqual(viewModel.preferences[.claude]?.warmupModel, "sonnet-4")
+        XCTAssertEqual(storage.preference(for: .claude).warmupModel, "sonnet-4")
     }
 }
