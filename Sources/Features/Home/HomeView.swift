@@ -47,6 +47,37 @@ struct UsageRow: View {
     }
 }
 
+private struct UsageSectionHeader: View {
+    let isLoading: Bool
+    let lastUsageSyncDate: Date?
+    let onRefresh: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Usage")
+                Spacer()
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button(action: onRefresh) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                }
+            }
+
+            if let lastUsageSyncDate {
+                Text("Last synced \(lastUsageSyncDate.absoluteTimeDescription)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+    }
+}
+
 private struct QuotaBar: View {
     let window: QuotaWindowDisplay
 
@@ -186,7 +217,7 @@ struct HomeView: View {
                 // MARK: - Usage
                 if !viewModel.usageProviders.isEmpty {
                     Section {
-                        if viewModel.isLoadingUsage {
+                        if viewModel.isLoadingUsage && viewModel.usageSummaries.isEmpty {
                             HStack {
                                 ProgressView()
                                 Text("Loading usage...")
@@ -201,16 +232,13 @@ struct HomeView: View {
                             }
                         }
                     } header: {
-                        HStack {
-                            Text("Usage")
-                            Spacer()
-                            Button {
+                        UsageSectionHeader(
+                            isLoading: viewModel.isLoadingUsage,
+                            lastUsageSyncDate: viewModel.lastUsageSyncDate,
+                            onRefresh: {
                                 Task { await viewModel.refreshUsage(forceRefresh: true) }
-                            } label: {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.caption)
                             }
-                        }
+                        )
                     }
                 }
 
@@ -236,6 +264,7 @@ struct HomeView: View {
         }
         .task {
             viewModel.loadProviderSettings()
+            viewModel.loadCachedUsage()
             await viewModel.refreshUsage()
         }
         .onDisappear {

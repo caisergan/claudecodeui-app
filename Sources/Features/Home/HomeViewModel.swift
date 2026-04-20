@@ -13,7 +13,8 @@ private enum WarmupProjectPathResolutionError: LocalizedError {
         case .unresolved:
             return """
             Warmup could not resolve the server project path automatically. \
-            Set warmup_project_path in .env or ensure /health returns appInstallPath.
+            Set a Warmup Project Path in Settings, set warmup_project_path in .env, \
+            or ensure /health returns appInstallPath.
             """
         }
     }
@@ -29,6 +30,7 @@ final class HomeViewModel: ObservableObject {
     // MARK: - Usage & Warmup State
     @Published var preferences: [AIProvider: ProviderPreference] = [:]
     @Published var usageSummaries: [ProviderUsageSummary] = []
+    @Published var lastUsageSyncDate: Date? = nil
     @Published var warmupStates: [AIProvider: WarmupState] = [:]
     @Published var lastSuccessfulWarmupDates: [AIProvider: Date] = [:]
     @Published var isLoadingUsage: Bool = false
@@ -49,7 +51,7 @@ final class HomeViewModel: ObservableObject {
 
     init(
         client: APIClient = .shared,
-        serverClient: APIClient = APIClient(baseURL: AppConfig.serverBaseURL),
+        serverClient: APIClient = .serverShared,
         storage: UserDefaultsStorage = .shared
     ) {
         self.client = client
@@ -135,7 +137,7 @@ final class HomeViewModel: ObservableObject {
                 }
             }
 
-            usageSummaries = providers.map { provider in
+            let updatedSummaries = providers.map { provider in
                 if let result = resultsByProvider[provider] {
                     return result.usageSummary(for: provider)
                 }
@@ -150,9 +152,29 @@ final class HomeViewModel: ObservableObject {
                     resetTime: nil
                 )
             }
+
+            applyUsageSnapshot(updatedSummaries, syncedAt: Date())
         } catch {
             if AppConfig.disableAuthentication {
                 loadPreviewUsage()
+                return
+            }
+
+            if isUsageEndpointUnavailable(error) {
+                errorMessage = nil
+                showError = false
+                let unsupportedSummaries = providers.map { provider in
+                    ProviderUsageSummary(
+                        provider: provider,
+                        status: .unsupported,
+                        state: "unsupported",
+                        quotaWindows: [],
+                        statusMessage: "Usage endpoint is unavailable on this server",
+                        metadata: nil,
+                        resetTime: nil
+                    )
+                }
+                applyUsageSnapshot(unsupportedSummaries, syncedAt: Date())
                 return
             }
 
@@ -266,6 +288,20 @@ final class HomeViewModel: ObservableObject {
         resetTasks.removeAll()
     }
 
+    func loadCachedUsage() {
+        guard !AppConfig.disableAuthentication else {
+            return
+        }
+
+        guard let snapshot = storage.usageCacheSnapshot,
+              snapshot.baseURL == client.resolvedBaseURL.absoluteString else {
+            return
+        }
+
+        usageSummaries = snapshot.summaries.filter { usageProviders.contains($0.provider) }
+        lastUsageSyncDate = snapshot.syncedAt
+    }
+
     private func loadPreviewConversations() {
         errorMessage = nil
         showError = false
@@ -296,6 +332,7 @@ final class HomeViewModel: ObservableObject {
                 resetTime: nil
             )
         }
+        lastUsageSyncDate = nil
     }
 
     private func presentWarmupFailure(
@@ -305,5 +342,26 @@ final class HomeViewModel: ObservableObject {
         warmupStates[provider] = .failure(message)
         errorMessage = "\(provider.displayName) warmup failed: \(message)"
         showError = true
+    }
+
+    private func isUsageEndpointUnavailable(_ error: Error) -> Bool {
+        guard case APIError.serverError(let message) = error else {
+            return false
+        }
+
+        return message.contains("/usage-limits") && message.contains("received HTML")
+    }
+
+    private func applyUsageSnapshot(
+        _ summaries: [ProviderUsageSummary],
+        syncedAt: Date
+    ) {
+        usageSummaries = summaries
+        lastUsageSyncDate = syncedAt
+        storage.usageCacheSnapshot = UsageCacheSnapshot(
+            baseURL: client.resolvedBaseURL.absoluteString,
+            syncedAt: syncedAt,
+            summaries: summaries
+        )
     }
 }

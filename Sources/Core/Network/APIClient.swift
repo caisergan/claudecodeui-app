@@ -57,17 +57,29 @@ private struct APIErrorPayload: Decodable {
 // MARK: - APIClient
 
 final class APIClient {
-    static let shared = APIClient()
+    static let shared = APIClient(baseURLProvider: { AppConfig.apiBaseURL })
+    static let serverShared = APIClient(baseURLProvider: { AppConfig.serverBaseURL })
 
     private let session: URLSession
-    private let baseURL: URL
+    private let baseURLProvider: () -> URL
     private let decoder = JSONDecoder()
 
     init(baseURL: URL = AppConfig.apiBaseURL, session: URLSession = .shared) {
-        self.baseURL = baseURL
+        self.baseURLProvider = { baseURL }
         self.session = session
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         decoder.dateDecodingStrategy = .iso8601
+    }
+
+    init(baseURLProvider: @escaping () -> URL, session: URLSession = .shared) {
+        self.baseURLProvider = baseURLProvider
+        self.session = session
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+    }
+
+    var resolvedBaseURL: URL {
+        baseURLProvider()
     }
 
     // MARK: - Generic Request
@@ -85,9 +97,24 @@ final class APIClient {
 
         switch httpResponse.statusCode {
         case 200...299:
+            if let compatibilityError = compatibilityError(
+                for: endpoint,
+                data: data,
+                response: httpResponse
+            ) {
+                throw compatibilityError
+            }
+
             do {
                 return try decoder.decode(T.self, from: data)
             } catch {
+                if let compatibilityError = compatibilityError(
+                    for: endpoint,
+                    data: data,
+                    response: httpResponse
+                ) {
+                    throw compatibilityError
+                }
                 throw APIError.decodingFailed
             }
         default:
@@ -109,6 +136,8 @@ final class APIClient {
     // MARK: - Helpers
 
     func buildRequest(for endpoint: Endpoint) throws -> URLRequest {
+        let baseURL = baseURLProvider()
+
         guard let baseComponents = URLComponents(url: baseURL, resolvingAgainstBaseURL: true) else {
             throw APIError.invalidURL
         }
@@ -180,5 +209,31 @@ final class APIClient {
         }
 
         return .requestFailed(statusCode: response.statusCode)
+    }
+
+    private func compatibilityError(
+        for endpoint: Endpoint,
+        data: Data,
+        response: HTTPURLResponse
+    ) -> APIError? {
+        let contentType = response.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+        let bodyPreview = String(data: data.prefix(256), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+
+        let receivedHTML = contentType.contains("text/html")
+            || bodyPreview.hasPrefix("<!doctype html")
+            || bodyPreview.hasPrefix("<html")
+
+        guard receivedHTML else {
+            return nil
+        }
+
+        return .serverError(
+            """
+            Expected JSON from \(endpoint.path) but received HTML. \
+            This base URL points to a frontend site or an incompatible backend.
+            """
+        )
     }
 }

@@ -2,6 +2,26 @@ import Foundation
 
 /// Central place for compile-time and runtime configuration.
 enum AppConfig {
+    enum ConfigSource {
+        case appSettings
+        case envFile
+        case builtInDefault
+        case unavailable
+
+        var displayName: String {
+            switch self {
+            case .appSettings:
+                return "Settings"
+            case .envFile:
+                return ".env"
+            case .builtInDefault:
+                return "Built-in default"
+            case .unavailable:
+                return "Not set"
+            }
+        }
+    }
+
     // MARK: - Environment
 
     enum Environment {
@@ -94,9 +114,16 @@ enum AppConfig {
 
     // MARK: - API
 
-    private static func normalizedAPIBaseURL(from rawValue: String) -> URL? {
+    static func normalizedAPIBaseURL(from rawValue: String) -> URL? {
         guard let url = URL(string: rawValue),
               var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        guard let scheme = components.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = components.host,
+              !host.isBlank else {
             return nil
         }
 
@@ -116,10 +143,14 @@ enum AppConfig {
     }
 
     static var apiBaseURL: URL {
-        if let envURL = envValues["api_base_url"], !envURL.isEmpty,
-           let url = normalizedAPIBaseURL(from: envURL) {
-            return url
+        if let appURL = appAPIBaseURLOverride {
+            return appURL
         }
+
+        if let envURL = envAPIBaseURL {
+            return envURL
+        }
+
         switch environment {
         case .development:
             return normalizedAPIBaseURL(from: "http://localhost:3000/api")!
@@ -130,12 +161,20 @@ enum AppConfig {
         }
     }
 
-    static var hasExplicitAPIBaseURL: Bool {
-        guard let envURL = envValues["api_base_url"], !envURL.isEmpty else {
-            return false
+    static var apiBaseURLSource: ConfigSource {
+        if appAPIBaseURLOverride != nil {
+            return .appSettings
         }
 
-        return normalizedAPIBaseURL(from: envURL) != nil
+        if envAPIBaseURL != nil {
+            return .envFile
+        }
+
+        return .builtInDefault
+    }
+
+    static var hasExplicitAPIBaseURL: Bool {
+        appAPIBaseURLOverride != nil || envAPIBaseURL != nil
     }
 
     static var serverBaseURL: URL {
@@ -156,7 +195,7 @@ enum AppConfig {
 
     // MARK: - Agent / Warmup
 
-    static var agentAPIKey: String? {
+    static var envAgentAPIKey: String? {
         let candidates = [
             envValues["ccui_api_key"],
             envValues["CCUI_API_KEY"],
@@ -175,12 +214,12 @@ enum AppConfig {
         envValue: String?,
         keychainValue: String?
     ) -> String? {
-        if let envValue, !envValue.isBlank {
-            return envValue
-        }
-
         if let keychainValue, !keychainValue.isBlank {
             return keychainValue
+        }
+
+        if let envValue, !envValue.isBlank {
+            return envValue
         }
 
         return nil
@@ -188,12 +227,30 @@ enum AppConfig {
 
     static var resolvedAgentAPIKey: String? {
         preferredAgentAPIKey(
-            envValue: agentAPIKey,
+            envValue: envAgentAPIKey,
             keychainValue: KeychainHelper.shared.read(key: .agentAPIKey)
         )
     }
 
+    static var agentAPIKeySource: ConfigSource {
+        if let keychainValue = KeychainHelper.shared.read(key: .agentAPIKey),
+           !keychainValue.isBlank {
+            return .appSettings
+        }
+
+        if envAgentAPIKey != nil {
+            return .envFile
+        }
+
+        return .unavailable
+    }
+
     static var defaultProjectPath: String? {
+        if let appProjectPath = UserDefaultsStorage.shared.warmupProjectPathOverride,
+           !appProjectPath.isBlank {
+            return appProjectPath
+        }
+
         let candidates = [
             envValues["project_path"],
             envValues["warmup_project_path"]
@@ -205,9 +262,22 @@ enum AppConfig {
         } ?? nil
     }
 
+    static var defaultProjectPathSource: ConfigSource {
+        if let appProjectPath = UserDefaultsStorage.shared.warmupProjectPathOverride,
+           !appProjectPath.isBlank {
+            return .appSettings
+        }
+
+        if defaultProjectPath != nil {
+            return .envFile
+        }
+
+        return .unavailable
+    }
+
     // MARK: - Feature Flags
 
-    static let disableAuthentication: Bool = {
+    static var disableAuthentication: Bool {
         if let override = boolEnvValue(for: [
             "disable_authentication",
             "preview_mode",
@@ -217,7 +287,23 @@ enum AppConfig {
         }
 
         return environment == .development && !hasExplicitAPIBaseURL
-    }()
+    }
     static let enableAnalytics: Bool = environment == .production
     static let enableDebugMenu: Bool = environment == .development
+
+    private static var appAPIBaseURLOverride: URL? {
+        guard let override = UserDefaultsStorage.shared.apiBaseURLOverride else {
+            return nil
+        }
+
+        return normalizedAPIBaseURL(from: override)
+    }
+
+    private static var envAPIBaseURL: URL? {
+        guard let envURL = envValues["api_base_url"], !envURL.isEmpty else {
+            return nil
+        }
+
+        return normalizedAPIBaseURL(from: envURL)
+    }
 }

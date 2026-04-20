@@ -61,6 +61,9 @@ final class UserDefaultsStorage {
     private let providerPreferencesKey = "providerPreferences"
     private let warmupSessionIdsKey = "warmupSessionIds"
     private let lastSuccessfulWarmupDatesKey = "lastSuccessfulWarmupDates"
+    private let apiBaseURLOverrideKey = "apiBaseURLOverride"
+    private let warmupProjectPathOverrideKey = "warmupProjectPathOverride"
+    private let usageCacheSnapshotKey = "usageCacheSnapshot"
 
     var providerPreferences: [String: ProviderPreference] {
         get {
@@ -129,5 +132,67 @@ final class UserDefaultsStorage {
         var all = lastSuccessfulWarmupDates
         all[provider.rawValue] = date
         lastSuccessfulWarmupDates = all
+    }
+
+    var apiBaseURLOverride: String? {
+        get {
+            guard let rawValue = store.string(forKey: apiBaseURLOverrideKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !rawValue.isBlank else {
+                return nil
+            }
+
+            return rawValue
+        }
+        set {
+            guard let newValue = newValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !newValue.isBlank else {
+                store.removeObject(forKey: apiBaseURLOverrideKey)
+                return
+            }
+
+            store.set(newValue, forKey: apiBaseURLOverrideKey)
+        }
+    }
+
+    var warmupProjectPathOverride: String? {
+        get {
+            guard let rawValue = store.string(forKey: warmupProjectPathOverrideKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !rawValue.isBlank else {
+                return nil
+            }
+
+            return rawValue
+        }
+        set {
+            guard let newValue = newValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !newValue.isBlank else {
+                store.removeObject(forKey: warmupProjectPathOverrideKey)
+                return
+            }
+
+            store.set(newValue, forKey: warmupProjectPathOverrideKey)
+        }
+    }
+
+    var usageCacheSnapshot: UsageCacheSnapshot? {
+        get {
+            guard let data = store.data(forKey: usageCacheSnapshotKey),
+                  let decoded = try? JSONDecoder().decode(UsageCacheSnapshot.self, from: data) else {
+                return nil
+            }
+
+            return decoded
+        }
+        set {
+            guard let newValue,
+                  let data = try? JSONEncoder().encode(newValue) else {
+                store.removeObject(forKey: usageCacheSnapshotKey)
+                return
+            }
+
+            store.set(data, forKey: usageCacheSnapshotKey)
+        }
     }
 }

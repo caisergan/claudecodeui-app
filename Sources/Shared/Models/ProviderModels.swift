@@ -204,7 +204,7 @@ struct CLIStatusResponse: Codable {
 
 // MARK: - Display Models
 
-enum ProviderUsageStatus: Equatable {
+enum ProviderUsageStatus: String, Codable, Equatable {
     case ready
     case limited
     case actionRequired
@@ -224,13 +224,14 @@ enum ProviderUsageStatus: Equatable {
     }
 }
 
-struct QuotaWindowDisplay: Identifiable {
-    let id = UUID()
+struct QuotaWindowDisplay: Codable, Equatable, Identifiable {
     let label: String
     let remaining: Double
+
+    var id: String { label }
 }
 
-struct ProviderUsageSummary: Identifiable {
+struct ProviderUsageSummary: Codable, Equatable, Identifiable {
     let provider: AIProvider
     let status: ProviderUsageStatus
     let state: String?
@@ -240,6 +241,12 @@ struct ProviderUsageSummary: Identifiable {
     let resetTime: Date?
 
     var id: String { provider.rawValue }
+}
+
+struct UsageCacheSnapshot: Codable, Equatable {
+    let baseURL: String
+    let syncedAt: Date
+    let summaries: [ProviderUsageSummary]
 }
 
 extension ProviderUsageResult {

@@ -29,7 +29,12 @@ final class AppState: ObservableObject {
             return
         }
 
-        guard KeychainHelper.shared.read(key: .authToken) != nil else { return }
+        guard KeychainHelper.shared.read(key: .authToken) != nil else {
+            currentUser = nil
+            isAuthenticated = false
+            errorMessage = nil
+            return
+        }
 
         isLoading = true
         defer { isLoading = false }

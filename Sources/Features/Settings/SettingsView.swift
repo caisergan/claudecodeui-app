@@ -60,6 +60,123 @@ struct SettingsView: View {
                     }
                 }
 
+                // MARK: - Connection
+                Section("Connection") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("API Base URL")
+                            .font(.subheadline)
+
+                        TextField(
+                            "Blank uses .env or the built-in default",
+                            text: $viewModel.apiBaseURLOverrideText
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+
+                        HStack {
+                            Button("Save Base URL") {
+                                guard viewModel.saveAPIBaseURLOverride() else { return }
+                                Task {
+                                    await viewModel.refreshRuntimeConfiguration(appState: appState)
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Spacer()
+
+                            Button("Use .env/default") {
+                                Task {
+                                    viewModel.clearAPIBaseURLOverride()
+                                    await viewModel.refreshRuntimeConfiguration(appState: appState)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .foregroundStyle(.secondary)
+                        }
+
+                        LabeledContent("Active URL", value: viewModel.activeAPIBaseURL)
+                            .font(.caption)
+                        LabeledContent("Source", value: viewModel.apiBaseURLSourceLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("ClaudeCodeUI API Key")
+                            .font(.subheadline)
+
+                        SecureField(
+                            "Blank uses .env when available",
+                            text: $viewModel.agentAPIKeyText
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                        HStack {
+                            Button("Save API Key") {
+                                viewModel.saveAgentAPIKey()
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Spacer()
+
+                            Button("Use .env") {
+                                viewModel.clearAgentAPIKey()
+                            }
+                            .buttonStyle(.bordered)
+                            .foregroundStyle(.secondary)
+                        }
+
+                        LabeledContent("Source", value: viewModel.agentAPIKeySourceLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Warmup Project Path")
+                            .font(.subheadline)
+
+                        TextField(
+                            "Blank uses .env or /health when available",
+                            text: $viewModel.warmupProjectPathText
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+
+                        HStack {
+                            Button("Save Project Path") {
+                                viewModel.saveWarmupProjectPath()
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Spacer()
+
+                            Button("Use .env/health") {
+                                viewModel.clearWarmupProjectPath()
+                            }
+                            .buttonStyle(.bordered)
+                            .foregroundStyle(.secondary)
+                        }
+
+                        LabeledContent("Source", value: viewModel.warmupProjectPathSourceLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+
+                    if let errorBanner = viewModel.errorBanner {
+                        Text(errorBanner)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+
                 // MARK: - About
                 Section("About") {
                     LabeledContent("Version", value: viewModel.appVersion)
