@@ -230,9 +230,23 @@ final class HomeViewModel: ObservableObject {
                 responseType: WarmupResponse.self
             )
 
-            // Persist the provider-specific session ID so future warmups resume the same thread.
-            if let newSessionId = response.sessionId, !newSessionId.isBlank {
-                storage.setWarmupSessionId(newSessionId, for: provider)
+            let effectiveSessionId = response.sessionId?.isBlank == false
+                ? response.sessionId
+                : sessionId
+            let effectiveProjectPath = response.projectPath?.isBlank == false
+                ? response.projectPath
+                : projectPath
+
+            if let effectiveSessionId, !effectiveSessionId.isBlank {
+                let cachedMessages = response.messages.compactMap { $0.asAppMessage() }
+                let existingMessages = storage.agentSessionContext(for: provider)?.messages ?? []
+                let context = AgentSessionContext(
+                    sessionId: effectiveSessionId,
+                    projectPath: effectiveProjectPath,
+                    messages: cachedMessages.isNotEmpty ? cachedMessages : existingMessages
+                )
+
+                storage.setAgentSessionContext(context, for: provider)
             }
 
             let completedAt = Date()

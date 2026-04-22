@@ -54,3 +54,6 @@ AuthKey_*.p8
 .omx/
 .worktrees/
 .gemini-clipboard/
+
+# ── Graphify ────────────────────────────────────────────────────────────────
+graphify-out/

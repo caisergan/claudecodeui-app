@@ -287,6 +287,44 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.lastSuccessfulWarmupDates[.codex], existingDate)
     }
 
+    func testWarmupCachesAgentSessionContextFromResponseMessages() async throws {
+        let session = makeMockSession { request in
+            switch request.url?.path {
+            case "/health":
+                return try Self.jsonResponse(
+                    ["status": "ok", "timestamp": "2026-04-19T00:00:00Z", "appInstallPath": "/tmp/project"],
+                    for: request
+                )
+            case "/api/agent":
+                return try Self.jsonResponse(
+                    [
+                        "success": true,
+                        "sessionId": "claude-session-1",
+                        "projectPath": "/tmp/project",
+                        "messages": [
+                            ["role": "assistant", "content": "Claude warmup complete"],
+                        ],
+                    ],
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let viewModel = makeViewModel(session: session)
+
+        await viewModel.warmupProvider(.claude)
+
+        let context = try XCTUnwrap(storage.agentSessionContext(for: .claude))
+        XCTAssertEqual(context.sessionId, "claude-session-1")
+        XCTAssertEqual(context.projectPath, "/tmp/project")
+        XCTAssertEqual(context.messages.count, 1)
+        XCTAssertEqual(context.messages.first?.role, .assistant)
+        XCTAssertEqual(context.messages.first?.content, "Claude warmup complete")
+    }
+
     func testUsageProvidersExcludeClaudeAndRefreshRequestsOnlyNonClaudeProviders() async throws {
         var requestedProviders: [String] = []
 

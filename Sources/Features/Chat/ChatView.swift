@@ -40,6 +40,9 @@ struct ChatView: View {
             }
             .navigationTitle(viewModel.conversationTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                Task { await viewModel.loadChatContext() }
+            }
         }
     }
 }

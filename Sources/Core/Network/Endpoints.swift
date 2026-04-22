@@ -88,4 +88,30 @@ enum API {
             authMode: .apiKey
         )
     }
+
+    static func agentMessages(
+        sessionId: String,
+        provider: String,
+        projectPath: String? = nil,
+        offset: Int? = nil,
+        limit: Int? = nil
+    ) -> Endpoint {
+        var queryItems = [URLQueryItem(name: "provider", value: provider)]
+
+        if let projectPath, !projectPath.isBlank {
+            queryItems.append(.init(name: "projectPath", value: projectPath))
+        }
+        if let offset {
+            queryItems.append(.init(name: "offset", value: String(offset)))
+        }
+        if let limit {
+            queryItems.append(.init(name: "limit", value: String(limit)))
+        }
+
+        return Endpoint(
+            path: "/agent/sessions/\(sessionId)/messages",
+            queryItems: queryItems,
+            authMode: .apiKey
+        )
+    }
 }

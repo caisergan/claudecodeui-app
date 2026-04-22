@@ -63,6 +63,7 @@ final class UserDefaultsStorage {
     private let lastSuccessfulWarmupDatesKey = "lastSuccessfulWarmupDates"
     private let apiBaseURLOverrideKey = "apiBaseURLOverride"
     private let warmupProjectPathOverrideKey = "warmupProjectPathOverride"
+    private let agentSessionContextsKey = "agentSessionContexts"
     private let usageCacheSnapshotKey = "usageCacheSnapshot"
 
     var providerPreferences: [String: ProviderPreference] {
@@ -104,6 +105,22 @@ final class UserDefaultsStorage {
         }
     }
 
+    var agentSessionContexts: [String: AgentSessionContext] {
+        get {
+            guard let data = store.data(forKey: agentSessionContextsKey),
+                  let decoded = try? JSONDecoder().decode([String: AgentSessionContext].self, from: data) else {
+                return [:]
+            }
+
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                store.set(data, forKey: agentSessionContextsKey)
+            }
+        }
+    }
+
     func preference(for provider: AIProvider) -> ProviderPreference {
         providerPreferences[provider.rawValue] ?? .default
     }
@@ -122,6 +139,17 @@ final class UserDefaultsStorage {
         var all = warmupSessionIds
         all[provider.rawValue] = sessionId
         warmupSessionIds = all
+    }
+
+    func agentSessionContext(for provider: AIProvider) -> AgentSessionContext? {
+        agentSessionContexts[provider.rawValue]
+    }
+
+    func setAgentSessionContext(_ context: AgentSessionContext, for provider: AIProvider) {
+        var all = agentSessionContexts
+        all[provider.rawValue] = context
+        agentSessionContexts = all
+        setWarmupSessionId(context.sessionId, for: provider)
     }
 
     func lastSuccessfulWarmupDate(for provider: AIProvider) -> Date? {

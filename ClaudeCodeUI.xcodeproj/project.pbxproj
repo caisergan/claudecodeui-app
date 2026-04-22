@@ -42,6 +42,7 @@
 		CA0000000000000000000024 /* HomeViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000024 /* HomeViewModelTests.swift */; };
 		CA0000000000000000000027 /* SettingsViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000025 /* SettingsViewModelTests.swift */; };
 		CA0000000000000000000028 /* AuthFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000026 /* AuthFlowTests.swift */; };
+		CA0000000000000000000029 /* ChatViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000027 /* ChatViewModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -93,6 +94,7 @@
 		BA0000000000000000000024 /* HomeViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModelTests.swift; sourceTree = "<group>"; };
 		BA0000000000000000000025 /* SettingsViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModelTests.swift; sourceTree = "<group>"; };
 		BA0000000000000000000026 /* AuthFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFlowTests.swift; sourceTree = "<group>"; };
+		BA0000000000000000000027 /* ChatViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -304,6 +306,7 @@
 				BA0000000000000000000024 /* HomeViewModelTests.swift */,
 				BA0000000000000000000025 /* SettingsViewModelTests.swift */,
 				BA0000000000000000000026 /* AuthFlowTests.swift */,
+				BA0000000000000000000027 /* ChatViewModelTests.swift */,
 				BA000000000000000000001F /* MockURLProtocol.swift */,
 			);
 			path = UnitTests;
@@ -440,6 +443,7 @@
 				CA0000000000000000000024 /* HomeViewModelTests.swift in Sources */,
 				CA0000000000000000000027 /* SettingsViewModelTests.swift in Sources */,
 				CA0000000000000000000028 /* AuthFlowTests.swift in Sources */,
+				CA0000000000000000000029 /* ChatViewModelTests.swift in Sources */,
 				CA000000000000000000001D /* MockURLProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

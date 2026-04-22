@@ -98,13 +98,14 @@ struct WarmupRequestPayload: Codable {
     let stream: Bool
 
     init(
+        message: String = "ping",
         provider: AIProvider,
         model: String? = nil,
         sessionId: String? = nil,
         projectPath: String? = nil,
         githubUrl: String? = nil
     ) {
-        self.message = "ping"
+        self.message = message
         self.provider = provider.rawValue
         self.model = model
         self.sessionId = sessionId
@@ -119,6 +120,231 @@ struct WarmupRequestPayload: Codable {
 struct WarmupResponse: Codable {
     let success: Bool
     let sessionId: String?
+    let projectPath: String?
+    let messages: [AgentResponseMessage]
+
+    private enum CodingKeys: String, CodingKey {
+        case success
+        case sessionId
+        case projectPath
+        case messages
+    }
+
+    init(
+        success: Bool,
+        sessionId: String? = nil,
+        projectPath: String? = nil,
+        messages: [AgentResponseMessage] = []
+    ) {
+        self.success = success
+        self.sessionId = sessionId
+        self.projectPath = projectPath
+        self.messages = messages
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        let projectPath = try container.decodeIfPresent(String.self, forKey: .projectPath)
+        let messages = try container.decodeIfPresent([AgentResponseMessage].self, forKey: .messages) ?? []
+        let success = try container.decodeIfPresent(Bool.self, forKey: .success)
+            ?? (sessionId?.isBlank == false || projectPath?.isBlank == false || messages.isNotEmpty)
+
+        self.init(
+            success: success,
+            sessionId: sessionId,
+            projectPath: projectPath,
+            messages: messages
+        )
+    }
+}
+
+struct AgentSessionContext: Codable, Equatable {
+    let sessionId: String
+    let projectPath: String?
+    let messages: [Message]
+}
+
+struct AgentMessagesResponse: Decodable {
+    let messages: [AgentResponseMessage]
+
+    private enum CodingKeys: String, CodingKey {
+        case messages
+    }
+
+    init(messages: [AgentResponseMessage]) {
+        self.messages = messages
+    }
+
+    init(from decoder: Decoder) throws {
+        if let container = try? decoder.singleValueContainer(),
+           let messages = try? container.decode([AgentResponseMessage].self) {
+            self.init(messages: messages)
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(messages: try container.decodeIfPresent([AgentResponseMessage].self, forKey: .messages) ?? [])
+    }
+}
+
+struct AgentResponseMessage: Codable, Equatable {
+    let id: String?
+    let role: MessageRole
+    let content: String
+    let timestamp: Date?
+
+    init(
+        id: String? = nil,
+        role: MessageRole = .assistant,
+        content: String,
+        timestamp: Date? = nil
+    ) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.timestamp = timestamp
+    }
+
+    init(from decoder: Decoder) throws {
+        if let singleValue = try? decoder.singleValueContainer(),
+           let content = try? singleValue.decode(String.self) {
+            self.init(content: content)
+            return
+        }
+
+        let container = try decoder.container(keyedBy: DynamicCodingKey.self)
+        let id = container.decodeFirstString(forKeys: ["id", "messageId", "message_id"])
+        let role = MessageRole(rawValue: container.decodeFirstString(forKeys: ["role", "sender"]) ?? "")
+            ?? .assistant
+        let timestamp = AgentResponseMessage.decodeTimestamp(
+            from: container,
+            keys: ["timestamp", "createdAt", "created_at", "updatedAt", "updated_at"]
+        )
+        let content = AgentResponseMessage.decodeContent(from: container)
+
+        self.init(id: id, role: role, content: content, timestamp: timestamp)
+    }
+
+    func asAppMessage() -> Message? {
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedContent.isEmpty else {
+            return nil
+        }
+
+        return Message(
+            id: id ?? UUID().uuidString,
+            role: role,
+            content: trimmedContent,
+            timestamp: timestamp ?? .now
+        )
+    }
+
+    private static func decodeTimestamp(
+        from container: KeyedDecodingContainer<DynamicCodingKey>,
+        keys: [String]
+    ) -> Date? {
+        let formatters: [ISO8601DateFormatter] = {
+            let withFractionalSeconds = ISO8601DateFormatter()
+            withFractionalSeconds.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+            let basic = ISO8601DateFormatter()
+            basic.formatOptions = [.withInternetDateTime]
+
+            return [withFractionalSeconds, basic]
+        }()
+
+        for key in keys {
+            guard let stringValue = container.decodeFirstString(forKeys: [key]),
+                  !stringValue.isBlank else {
+                continue
+            }
+
+            for formatter in formatters {
+                if let date = formatter.date(from: stringValue) {
+                    return date
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private static func decodeContent(
+        from container: KeyedDecodingContainer<DynamicCodingKey>
+    ) -> String {
+        if let content = container.decodeFirstString(
+            forKeys: ["content", "text", "message", "body", "value"]
+        ) {
+            return content
+        }
+
+        for key in ["content", "parts", "chunks"] {
+            guard let codingKey = DynamicCodingKey(stringValue: key),
+                  let parts = try? container.decode([AgentMessagePart].self, forKey: codingKey) else {
+                continue
+            }
+
+            let combined = parts.compactMap(\.bestText).joined(separator: "\n").trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            if !combined.isEmpty {
+                return combined
+            }
+        }
+
+        return ""
+    }
+}
+
+private struct AgentMessagePart: Decodable {
+    let text: String?
+    let content: String?
+    let value: String?
+
+    var bestText: String? {
+        if let text, !text.isBlank { return text }
+        if let content, !content.isBlank { return content }
+        if let value, !value.isBlank { return value }
+        return nil
+    }
+}
+
+private struct DynamicCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        self.intValue = nil
+    }
+
+    init?(intValue: Int) {
+        self.stringValue = String(intValue)
+        self.intValue = intValue
+    }
+}
+
+private extension KeyedDecodingContainer where Key == DynamicCodingKey {
+    func decodeFirstString(forKeys keys: [String]) -> String? {
+        for key in keys {
+            guard let codingKey = DynamicCodingKey(stringValue: key) else { continue }
+
+            if let value = try? decodeIfPresent(String.self, forKey: codingKey) {
+                let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedValue.isEmpty else { continue }
+                return trimmedValue
+            }
+
+            if let value = try? decode(String.self, forKey: codingKey) {
+                let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedValue.isEmpty else { continue }
+                return trimmedValue
+            }
+        }
+
+        return nil
+    }
 }
 
 // MARK: - Health Response
