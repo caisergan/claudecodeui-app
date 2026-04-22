@@ -10,7 +10,10 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             Group {
-                if appState.isAuthenticated {
+                if !appState.hasResolvedInitialSession {
+                    ProgressView()
+                        .controlSize(.regular)
+                } else if appState.isAuthenticated {
                     MainTabView()
                 } else {
                     LoginView()

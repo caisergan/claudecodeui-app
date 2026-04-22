@@ -4,6 +4,7 @@ import Combine
 /// Top-level app state shared across the entire app via @EnvironmentObject.
 @MainActor
 final class AppState: ObservableObject {
+    @Published var hasResolvedInitialSession: Bool = false
     @Published var isAuthenticated: Bool = false
     @Published var currentUser: User? = nil
     @Published var isLoading: Bool = false
@@ -16,6 +17,7 @@ final class AppState: ObservableObject {
 
         if AppConfig.disableAuthentication {
             applyAuthBypassSession()
+            hasResolvedInitialSession = true
         }
     }
 
@@ -26,6 +28,7 @@ final class AppState: ObservableObject {
     func restoreSession() async {
         if AppConfig.disableAuthentication {
             applyAuthBypassSession()
+            hasResolvedInitialSession = true
             return
         }
 
@@ -33,11 +36,15 @@ final class AppState: ObservableObject {
             currentUser = nil
             isAuthenticated = false
             errorMessage = nil
+            hasResolvedInitialSession = true
             return
         }
 
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            hasResolvedInitialSession = true
+        }
 
         do {
             let response = try await client.request(API.me, responseType: CurrentUserResponse.self)

@@ -75,6 +75,7 @@ final class AuthFlowTests: XCTestCase {
 
         await appState.restoreSession()
 
+        XCTAssertTrue(appState.hasResolvedInitialSession)
         XCTAssertTrue(appState.isAuthenticated)
         XCTAssertEqual(appState.currentUser, User(id: "11", name: "dev-user", email: "dev-user"))
     }
@@ -85,8 +86,20 @@ final class AuthFlowTests: XCTestCase {
         appState.isAuthenticated = true
         appState.currentUser = User(id: "preview", name: "Preview", email: "preview@test.com")
 
+        XCTAssertFalse(appState.hasResolvedInitialSession)
+
         await appState.restoreSession()
 
+        XCTAssertTrue(appState.hasResolvedInitialSession)
+        XCTAssertFalse(appState.isAuthenticated)
+        XCTAssertNil(appState.currentUser)
+    }
+
+    func testAppStateStartsUnresolvedBeforeInitialSessionRestore() {
+        let client = APIClient(baseURL: URL(string: "https://mock.test/api")!, session: .shared)
+        let appState = AppState(client: client)
+
+        XCTAssertFalse(appState.hasResolvedInitialSession)
         XCTAssertFalse(appState.isAuthenticated)
         XCTAssertNil(appState.currentUser)
     }
